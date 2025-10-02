@@ -1,116 +1,247 @@
 import datetime
-import random
+import os
 
-import altair as alt
-import numpy as np
+
 import pandas as pd
 import streamlit as st
+from notion_client import Client
 
 # Show app title and description.
-st.set_page_config(page_title="Support tickets", page_icon="🎫")
-st.title("🎫 Support tickets")
+st.set_page_config(page_title="Support tickets", page_icon="🎫", layout="centered")
+st.title("🎫 Support Tickets for Blink Digitally")
 st.write(
     """
-    This app shows how you can build an internal tool in Streamlit. Here, we are 
-    implementing a support ticket workflow. The user can create a ticket, edit 
-    existing tickets, and view some statistics.
+    Use this app to submit in any publishing updates, republication details, or reminders.
     """
 )
 
-# Create a random Pandas dataframe with existing tickets.
-if "df" not in st.session_state:
-
-    # Set seed for reproducibility.
-    np.random.seed(42)
-
-    # Make up some fake issue descriptions.
-    issue_descriptions = [
-        "Network connectivity issues in the office",
-        "Software application crashing on startup",
-        "Printer not responding to print commands",
-        "Email server downtime",
-        "Data backup failure",
-        "Login authentication problems",
-        "Website performance degradation",
-        "Security vulnerability identified",
-        "Hardware malfunction in the server room",
-        "Employee unable to access shared files",
-        "Database connection failure",
-        "Mobile application not syncing data",
-        "VoIP phone system issues",
-        "VPN connection problems for remote employees",
-        "System updates causing compatibility issues",
-        "File server running out of storage space",
-        "Intrusion detection system alerts",
-        "Inventory management system errors",
-        "Customer data not loading in CRM",
-        "Collaboration tool not sending notifications",
-    ]
-
-    # Generate the dataframe with 100 rows/tickets.
-    data = {
-        "ID": [f"TICKET-{i}" for i in range(1100, 1000, -1)],
-        "Issue": np.random.choice(issue_descriptions, size=100),
-        "Status": np.random.choice(["Open", "In Progress", "Closed"], size=100),
-        "Priority": np.random.choice(["High", "Medium", "Low"], size=100),
-        "Date Submitted": [
-            datetime.date(2023, 6, 1) + datetime.timedelta(days=random.randint(0, 182))
-            for _ in range(100)
-        ],
-    }
-    df = pd.DataFrame(data)
-
-    # Save the dataframe in session state (a dictionary-like object that persists across
-    # page runs). This ensures our data is persisted when the app updates.
-    st.session_state.df = df
+@st.cache_resource
+def get_notion_client():
+    notion_token = os.getenv("NOTION_TOKEN") or st.secrets.get("NOTION_TOKEN", "")
+    if not notion_token:
+        st.error("Please set NOTION_TOKEN in your environment or Streamlit secrets.")
+        st.stop()
+    return Client(auth=notion_token)
 
 
-# Show a section to add a new ticket.
+DATABASE_ID = os.getenv("NOTION_DATABASE_ID") or st.secrets.get("NOTION_DATABASE_ID", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or st.secrets.get("ADMIN_PASSWORD", "")
+
+if not DATABASE_ID:
+    st.error("Please set NOTION_DATABASE_ID in your environment or Streamlit secrets.")
+    st.info("""
+	**Setup Instructions:**
+	1. Create a Notion integration at https://www.notion.so/my-integrations
+	2. Create a database in Notion with these properties:
+	   - ID (Title)
+	   - Issue (Text)
+	   - Status (Select: Open, In Progress, Closed)
+	   - Priority (Select: High, Medium, Low)
+	   - Date Submitted (Date)
+	   - Resolved Date (Date)
+	   - Created By (Select)
+	3. Share your database with your integration
+	4. Set NOTION_TOKEN, NOTION_DATABASE_ID, and ADMIN_PASSWORD in your environment or `.streamlit/secrets.toml`
+	""")
+    st.stop()
+
+notion = get_notion_client()
+
+
+def fetch_tickets_from_notion():
+    """Fetch all tickets from Notion database with pagination."""
+    try:
+        tickets = []
+        has_more = True
+        start_cursor = None
+        while has_more:
+            if start_cursor:
+                results = notion.databases.query(
+                    database_id=DATABASE_ID,
+                    start_cursor=start_cursor
+                )
+            else:
+                results = notion.databases.query(database_id=DATABASE_ID)
+
+            for page in results["results"]:
+                props = page["properties"]
+
+                ticket_id = props["ID"]["title"][0]["text"]["content"] if props["ID"]["title"] else ""
+                if not ticket_id or "-" not in ticket_id:
+                    ticket_id = "TICKET-1000"
+
+                ticket = {
+                    "page_id": page["id"],
+                    "ID": ticket_id,
+                    "Issue": props["Issue"]["rich_text"][0]["text"]["content"] if props["Issue"]["rich_text"] else "",
+                    "Status": props["Status"]["select"]["name"] if props["Status"]["select"] else "Open",
+                    "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
+                    "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
+                        "date"] else "",
+                    "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
+                                                                                props["Resolved Date"][
+                                                                                    "date"] else None,
+                }
+                tickets.append(ticket)
+
+            has_more = results.get("has_more", False)
+            start_cursor = results.get("next_cursor", None)
+
+        df = pd.DataFrame(tickets)
+
+        # Convert date columns to datetime
+        if not df.empty:
+            if "Date Submitted" in df.columns:
+                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"], errors='coerce')
+            if "Resolved Date" in df.columns:
+                df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], errors='coerce')
+
+        return df
+    except Exception as e:
+        st.error(f"Error fetching tickets from Notion: {e}")
+        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Resolved Date"])
+
+
+def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name):
+    """Create a new ticket in Notion database."""
+    try:
+        notion.pages.create(
+            parent={"database_id": DATABASE_ID},
+            properties={
+                "ID": {"title": [{"text": {"content": ticket_id}}]},
+                "Issue": {"rich_text": [{"text": {"content": issue}}]},
+                "Status": {"select": {"name": status}},
+                "Priority": {"select": {"name": priority}},
+                "Created By": {"select": {"name": name}},
+                "Date Submitted": {"date": {"start": date_submitted}},
+            }
+        )
+        return True
+    except Exception as e:
+        st.error(f"Error creating ticket: {e}")
+        return False
+
+
+def update_ticket_in_notion(page_id, issue, status, priority, resolved_date):
+    """Update an existing ticket in Notion."""
+    try:
+        properties = {
+            "Issue": {"rich_text": [{"text": {"content": issue}}]},
+            "Status": {"select": {"name": status}},
+            "Priority": {"select": {"name": priority}},
+        }
+
+        if resolved_date and pd.notna(resolved_date):
+            if isinstance(resolved_date, (pd.Timestamp, datetime.datetime, datetime.date)):
+                resolved_date_str = resolved_date.strftime("%Y-%m-%d") if hasattr(resolved_date, 'strftime') else str(
+                    resolved_date)
+                properties["Resolved Date"] = {"date": {"start": resolved_date_str}}
+        else:
+            properties["Resolved Date"] = {"date": None}
+
+        notion.pages.update(
+            page_id=page_id,
+            properties=properties
+        )
+        return True
+    except Exception as e:
+        st.error(f"Error updating ticket: {e}")
+        return False
+
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+with st.sidebar:
+    st.header("🔐 Admin Access")
+    if not st.session_state.authenticated:
+        password_input = st.text_input("Enter admin password:", type="password", key="password")
+        if st.button("Login"):
+            if password_input == ADMIN_PASSWORD:
+                st.session_state.authenticated = True
+                st.success("Access granted!")
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+    else:
+        st.success("✅ Authenticated")
+        if st.button("Logout"):
+            st.session_state.authenticated = False
+            st.rerun()
+
+if "df" not in st.session_state or st.button("🔄 Refresh from Notion"):
+    with st.spinner("Loading tickets from Notion..."):
+        st.session_state.df = fetch_tickets_from_notion()
+        st.session_state.original_df = st.session_state.df.copy()
+
 st.header("Add a ticket")
 
-# We're adding tickets via an `st.form` and some input widgets. If widgets are used
-# in a form, the app will only rerun once the submit button is pressed.
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+    name = st.selectbox("PM", st.secrets.get("NAMES", ""))
     submitted = st.form_submit_button("Submit")
 
 if submitted:
-    # Make a dataframe for the new ticket and append it to the dataframe in session
-    # state.
-    recent_ticket_number = int(max(st.session_state.df.ID).split("-")[1])
-    today = datetime.datetime.now().strftime("%m-%d-%Y")
-    df_new = pd.DataFrame(
-        [
-            {
-                "ID": f"TICKET-{recent_ticket_number+1}",
-                "Issue": issue,
-                "Status": "Open",
-                "Priority": priority,
-                "Date Submitted": today,
-            }
-        ]
-    )
+    if not issue.strip():
+        st.error("Please describe the issue before submitting.")
+    else:
+        with st.spinner("Fetching latest ticket from Notion..."):
+            try:
+                results = notion.databases.query(
+                    database_id=DATABASE_ID,
+                    page_size=1,
+                    sorts=[{"timestamp": "created_time", "direction": "descending"}]
+                )
 
-    # Show a little success message.
-    st.write("Ticket submitted! Here are the ticket details:")
-    st.dataframe(df_new, use_container_width=True, hide_index=True)
-    st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
+                if results["results"]:
+                    latest_page = results["results"][0]
+                    latest_id = latest_page["properties"]["ID"]["title"][0]["text"]["content"] if \
+                        latest_page["properties"]["ID"]["title"] else "TICKET-0000"
 
-# Show section to view and edit existing tickets in a table.
+                    if "-" in latest_id:
+                        recent_ticket_number = int(latest_id.split("-")[1])
+                    else:
+                        recent_ticket_number = 0000
+                else:
+                    recent_ticket_number = 0000
+            except Exception as e:
+                st.warning(f"Could not fetch latest ticket: {e}. Starting from TICKET-1001")
+                recent_ticket_number = 0000
+
+        new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        with st.spinner("Creating ticket in Notion..."):
+            success = create_ticket_in_notion(new_ticket_id, issue, "Open", priority, today, name)
+
+        if success:
+            st.success("Ticket submitted successfully!")
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
+            st.rerun()
+
 st.header("Existing tickets")
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
 
-st.info(
-    "You can edit the tickets by double clicking on a cell. Note how the plots below "
-    "update automatically! You can also sort the table by clicking on the column headers.",
-    icon="✍️",
-)
+if st.session_state.authenticated:
+    st.info(
+        "You can edit the tickets by double clicking on a cell. Click 'Save Changes to Notion' "
+        "to sync your edits. You can also sort the table by clicking on the column headers.",
+        icon="✍️",
+    )
+else:
+    st.warning("🔒 Login with admin password to edit tickets", icon="⚠️")
 
-# Show the tickets dataframe with `st.data_editor`. This lets the user edit the table
-# cells. The edited data is returned as a new dataframe.
+display_df = st.session_state.df.drop(
+    columns=["page_id"]) if "page_id" in st.session_state.df.columns else st.session_state.df
+
+disabled_columns = ["ID", "Date Submitted"]
+if not st.session_state.authenticated:
+    disabled_columns = list(display_df.columns)
+
 edited_df = st.data_editor(
-    st.session_state.df,
+    display_df,
     use_container_width=True,
     hide_index=True,
     column_config={
@@ -126,47 +257,50 @@ edited_df = st.data_editor(
             options=["High", "Medium", "Low"],
             required=True,
         ),
+        "Date Submitted": st.column_config.DateColumn(
+            "Date Submitted",
+            help="Date when ticket was submitted",
+            format="YYYY-MM-DD",
+        ),
+        "Resolved Date": st.column_config.DateColumn(
+            "Resolved Date",
+            help="Date when ticket was resolved",
+            format="YYYY-MM-DD",
+        ),
     },
-    # Disable editing the ID and Date Submitted columns.
-    disabled=["ID", "Date Submitted"],
+    disabled=disabled_columns,
 )
 
-# Show some metrics and charts about the ticket.
-st.header("Statistics")
+if st.session_state.authenticated and not edited_df.equals(display_df):
+    if st.button("💾 Save Changes to Notion", type="primary"):
+        with st.spinner("Saving changes to Notion..."):
+            success_count = 0
+            error_count = 0
 
-# Show metrics side by side using `st.columns` and `st.metric`.
-col1, col2, col3 = st.columns(3)
-num_open_tickets = len(st.session_state.df[st.session_state.df.Status == "Open"])
-col1.metric(label="Number of open tickets", value=num_open_tickets, delta=10)
-col2.metric(label="First response time (hours)", value=5.2, delta=-1.5)
-col3.metric(label="Average resolution time (hours)", value=16, delta=2)
+            for idx in edited_df.index:
+                if idx < len(display_df):
+                    original_row = display_df.iloc[idx]
+                    edited_row = edited_df.iloc[idx]
 
-# Show two Altair charts using `st.altair_chart`.
-st.write("")
-st.write("##### Ticket status per month")
-status_plot = (
-    alt.Chart(edited_df)
-    .mark_bar()
-    .encode(
-        x="month(Date Submitted):O",
-        y="count():Q",
-        xOffset="Status:N",
-        color="Status:N",
-    )
-    .configure_legend(
-        orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
-    )
-)
-st.altair_chart(status_plot, use_container_width=True, theme="streamlit")
+                    if not original_row.equals(edited_row):
+                        page_id = st.session_state.df.iloc[idx]["page_id"]
+                        success = update_ticket_in_notion(
+                            page_id,
+                            edited_row["Issue"],
+                            edited_row["Status"],
+                            edited_row["Priority"],
+                            edited_row["Resolved Date"]
+                        )
+                        if success:
+                            success_count += 1
+                        else:
+                            error_count += 1
 
-st.write("##### Current ticket priorities")
-priority_plot = (
-    alt.Chart(edited_df)
-    .mark_arc()
-    .encode(theta="count():Q", color="Priority:N")
-    .properties(height=300)
-    .configure_legend(
-        orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
-    )
-)
-st.altair_chart(priority_plot, use_container_width=True, theme="streamlit")
+            if success_count > 0:
+                st.success(f"✅ {success_count} ticket(s) updated successfully!")
+            if error_count > 0:
+                st.error(f"❌ {error_count} ticket(s) failed to update")
+
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
+            st.rerun()

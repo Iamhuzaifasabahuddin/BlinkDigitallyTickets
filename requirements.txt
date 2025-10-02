@@ -1,1 +1,3 @@
+altair
+notion-client
 streamlit
