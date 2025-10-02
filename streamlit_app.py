@@ -79,6 +79,7 @@ def fetch_tickets_from_notion():
                     "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
                     "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
                         "date"] else "",
+                    "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"]["name"] else "",
                     "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
                                                                                 props["Resolved Date"][
                                                                                     "date"] else None,
