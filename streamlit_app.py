@@ -3,6 +3,7 @@ import os
 
 
 import pandas as pd
+import pytz
 import streamlit as st
 from notion_client import Client
 
@@ -176,8 +177,11 @@ if "df" not in st.session_state or st.button("🔄 Refresh from Notion"):
 
 st.header("Add a ticket")
 
+pkt = pytz.timezone("Asia/Karachi")
+now_pkt = datetime.datetime.now(pkt)
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
+    today = st.date_input("Date", now_pkt.date())
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
     name = st.selectbox("PM", st.secrets.get("NAMES", ""))
     submitted = st.form_submit_button("Submit")
@@ -210,7 +214,7 @@ if submitted:
                 recent_ticket_number = 0000
 
         new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        # today = datetime.datetime.now().strftime("%Y-%m-%d")
 
         with st.spinner("Creating ticket in Notion..."):
             success = create_ticket_in_notion(new_ticket_id, issue, "Open", priority, today, name)
