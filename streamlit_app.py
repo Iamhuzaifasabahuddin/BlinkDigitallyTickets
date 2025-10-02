@@ -248,7 +248,7 @@ if not st.session_state.authenticated:
 
 edited_active_df = st.data_editor(
     display_active_df,
-    width=True,
+    use_container_width=True,
     hide_index=True,
     key="active_editor",
     column_config={
@@ -326,7 +326,7 @@ if not closed_df.empty:
 
         edited_closed_df = st.data_editor(
             display_closed_df,
-            width=True,
+            use_container_width=True,
             hide_index=True,
             key="closed_editor",
             column_config={
