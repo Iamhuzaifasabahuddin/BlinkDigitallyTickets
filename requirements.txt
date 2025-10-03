@@ -1,3 +1,4 @@
 altair
 notion-client
 streamlit
+slack_sdk
