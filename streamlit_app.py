@@ -4,7 +4,10 @@ import os
 import pandas as pd
 import pytz
 import streamlit as st
+import toml
 from notion_client import Client
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 # Show app title and description.
 st.set_page_config(page_title="Support tickets", page_icon="🎫", layout="centered")
@@ -14,8 +17,9 @@ st.write(
     Use this app to submit in any publishing updates, republication details, or reminders.
     """
 )
+client = WebClient(token=st.secrets.get("Slack", ""))
 
-
+name_all = st.secrets.get("name_all", {})
 @st.cache_resource
 def get_notion_client():
     notion_token = os.getenv("NOTION_TOKEN") or st.secrets.get("NOTION_TOKEN", "")
@@ -49,6 +53,25 @@ if not DATABASE_ID:
 notion = get_notion_client()
 
 
+def get_user_id_by_email(email):
+    try:
+        response = client.users_lookupByEmail(email=email)
+        return response['user']['id']
+    except SlackApiError as e:
+        print(f"Error finding user: {e.response['error']}")
+        return None
+
+
+def send_dm(user_id, message):
+    try:
+        response = client.chat_postMessage(
+            channel=user_id,
+            text=message
+        )
+    except SlackApiError as e:
+        print(f"❌ Error sending message: {e.response['error']}")
+
+
 def fetch_tickets_from_notion():
     """Fetch all tickets from Notion database with pagination."""
     try:
@@ -59,10 +82,12 @@ def fetch_tickets_from_notion():
             if start_cursor:
                 results = notion.databases.query(
                     database_id=DATABASE_ID,
-                    start_cursor=start_cursor
+                    start_cursor=start_cursor,
+                    sorts=[{"timestamp": "created_time", "direction": "ascending"}]
                 )
             else:
-                results = notion.databases.query(database_id=DATABASE_ID)
+                results = notion.databases.query(database_id=DATABASE_ID,
+                                                 sorts=[{"timestamp": "created_time", "direction": "ascending"}])
 
             for page in results["results"]:
                 props = page["properties"]
@@ -79,7 +104,10 @@ def fetch_tickets_from_notion():
                     "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
                     "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
                         "date"] else "",
-                    "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"]["name"] else "",
+                    "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"][
+                        "name"] else "",
+                    "Assigned To": props["Assigned To"]["select"]["name"] if props["Assigned To"]["select"][
+                        "name"] else "",
                     "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
                                                                                 props["Resolved Date"][
                                                                                     "date"] else None,
@@ -91,7 +119,6 @@ def fetch_tickets_from_notion():
 
         df = pd.DataFrame(tickets)
 
-        # Convert date columns to datetime
         if not df.empty:
             if "Date Submitted" in df.columns:
                 df["Date Submitted"] = pd.to_datetime(df["Date Submitted"], errors='coerce')
@@ -104,9 +131,97 @@ def fetch_tickets_from_notion():
         return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Resolved Date"])
 
 
-def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name):
+def send_ticket_notifications(ticket_id, issue, priority, status, user_details, creator_name, assigned_name):
+    """Send Slack notifications to both ticket creator and assigned user."""
+    try:
+        # Message to the assigned user
+        if user_details['receiver_id']:
+            assigned_message = f"""🎫 *New Ticket Assigned to You*
+
+*Ticket ID:* {ticket_id}
+*Priority:* {priority}
+*Status:* {status}
+*Created By:* {creator_name}
+
+*Issue:*
+{issue}
+
+Please review and update the ticket status accordingly."""
+
+            send_dm(user_details['receiver_id'], assigned_message)
+            print(f"✅ Notification sent to {assigned_name} ({user_details['receiver_email']})")
+        else:
+            print(f"⚠️ Could not send notification to {assigned_name} - Slack ID not found")
+
+        # Message to the ticket creator (confirmation)
+        if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
+            creator_message = f"""✅ *Ticket Created Successfully*
+
+*Ticket ID:* {ticket_id}
+*Priority:* {priority}
+*Status:* {status}
+*Assigned To:* {assigned_name}
+
+*Issue:*
+{issue}
+
+Your ticket has been submitted and assigned. You'll be notified of any updates."""
+
+            send_dm(user_details['sender_id'], creator_message)
+            print(f"✅ Confirmation sent to {creator_name} ({user_details['sender_email']})")
+        elif user_details['sender_id'] == user_details['receiver_id']:
+            print(f"ℹ️ Creator and assignee are the same person - sent only one notification")
+        else:
+            print(f"⚠️ Could not send confirmation to {creator_name} - Slack ID not found")
+
+    except Exception as e:
+        print(f"❌ Error sending Slack notifications: {e}")
+
+
+def get_user_details(name, assigned):
+    """Get sender and receiver email addresses and Slack IDs."""
+    try:
+        # Get email addresses from name_all dictionary
+        sender_email = name_all.get(name)
+        receiver_email = name_all.get(assigned)
+
+        if not sender_email:
+            print(f"Warning: No email found for '{name}'")
+            sender_id = None
+        else:
+            sender_id = get_user_id_by_email(sender_email)
+
+        if not receiver_email:
+            print(f"Warning: No email found for '{assigned}'")
+            receiver_id = None
+        else:
+            receiver_id = get_user_id_by_email(receiver_email)
+
+        return {
+            "sender_email": sender_email,
+            "receiver_email": receiver_email,
+            "sender_id": sender_id,
+            "receiver_id": receiver_id
+        }
+    except Exception as e:
+        print(f"Error getting user details: {e}")
+        return {
+            "sender_email": None,
+            "receiver_email": None,
+            "sender_id": None,
+            "receiver_id": None
+        }
+
+
+def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name, assigned):
     """Create a new ticket in Notion database."""
     try:
+        # Convert date object to string if necessary
+        if isinstance(date_submitted, (datetime.date, datetime.datetime)):
+            date_submitted_str = date_submitted.strftime("%Y-%m-%d")
+        else:
+            date_submitted_str = str(date_submitted)
+
         notion.pages.create(
             parent={"database_id": DATABASE_ID},
             properties={
@@ -115,17 +230,83 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
                 "Status": {"select": {"name": status}},
                 "Priority": {"select": {"name": priority}},
                 "Created By": {"select": {"name": name}},
-                "Date Submitted": {"date": {"start": date_submitted}},
+                "Assigned To": {"select": {"name": assigned}},
+                "Date Submitted": {"date": {"start": date_submitted_str}},
             }
         )
+
+        user_details = get_user_details(name, assigned)
+        print(f"Sender: {user_details['sender_email']} (ID: {user_details['sender_id']})")
+        print(f"Receiver: {user_details['receiver_email']} (ID: {user_details['receiver_id']})")
+
+        send_ticket_notifications(ticket_id, issue, priority, status, user_details, name, assigned)
         return True
     except Exception as e:
         st.error(f"Error creating ticket: {e}")
         return False
 
 
-def update_ticket_in_notion(page_id, issue, status, priority, resolved_date):
-    """Update an existing ticket in Notion."""
+def send_ticket_update_notifications(ticket_id, old_status, new_status, old_priority, new_priority,
+                                     issue, creator_name, assigned_name, resolved_date=None):
+    """Send Slack notifications when a ticket is updated."""
+    try:
+        # Determine what changed
+        changes = []
+        if old_status != new_status:
+            changes.append(f"*Status:* {old_status} → {new_status}")
+        if old_priority != new_priority:
+            changes.append(f"*Priority:* {old_priority} → {new_priority}")
+        if resolved_date and new_status == "Closed":
+            changes.append(f"*Resolved Date:* {resolved_date}")
+
+        if not changes:
+            return  # No meaningful changes to notify about
+
+        changes_text = "\n".join(changes)
+
+        # Get user details
+        user_details = get_user_details(creator_name, assigned_name)
+
+        # Message to the assigned user (if they're not the one making the change)
+        if user_details['receiver_id']:
+            assigned_message = f"""🔔 *Ticket Updated*
+
+*Ticket ID:* {ticket_id}
+*Created By:* {creator_name}
+
+*Changes:*
+{changes_text}
+
+*Issue:*
+{issue}"""
+
+            send_dm(user_details['receiver_id'], assigned_message)
+            print(f"✅ Update notification sent to {assigned_name} ({user_details['receiver_email']})")
+
+        # Message to the ticket creator (if different from assignee)
+        if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
+            creator_message = f"""🔔 *Your Ticket Was Updated*
+
+*Ticket ID:* {ticket_id}
+*Assigned To:* {assigned_name}
+
+*Changes:*
+{changes_text}
+
+*Issue:*
+{issue}"""
+
+            send_dm(user_details['sender_id'], creator_message)
+            print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
+
+    except Exception as e:
+        print(f"❌ Error sending update notifications: {e}")
+
+
+def update_ticket_in_notion(page_id, issue, status, priority, resolved_date,
+                            old_status=None, old_priority=None, ticket_id=None,
+                            creator_name=None, assigned_name=None):
+    """Update an existing ticket in Notion and send notifications."""
     try:
         properties = {
             "Issue": {"rich_text": [{"text": {"content": issue}}]},
@@ -145,11 +326,19 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date):
             page_id=page_id,
             properties=properties
         )
+
+        # Send notifications if we have the necessary information
+        if all([ticket_id, old_status, old_priority, creator_name, assigned_name]):
+            send_ticket_update_notifications(
+                ticket_id, old_status, status, old_priority, priority,
+                issue, creator_name, assigned_name,
+                resolved_date_str if resolved_date and pd.notna(resolved_date) else None
+            )
+
         return True
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
         return False
-
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -184,7 +373,8 @@ with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     today = st.date_input("Date", now_pkt.date())
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-    name = st.selectbox("PM", st.secrets.get("NAMES", ""))
+    name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
+    assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""))
     submitted = st.form_submit_button("Submit")
 
 if submitted:
@@ -217,7 +407,7 @@ if submitted:
         new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
 
         with st.spinner("Creating ticket in Notion..."):
-            success = create_ticket_in_notion(new_ticket_id, issue, "Open", priority, today, name)
+            success = create_ticket_in_notion(new_ticket_id, issue, "Open", priority, today, name, assigned)
 
         if success:
             st.success("Ticket submitted successfully!")
@@ -279,6 +469,8 @@ edited_active_df = st.data_editor(
     disabled=disabled_columns,
 )
 
+# Replace the "Save Changes to Notion" button section for Active Tickets with this:
+
 if st.session_state.authenticated and not edited_active_df.equals(display_active_df):
     if st.button("💾 Save Changes to Notion", type="primary", key="save_active"):
         with st.spinner("Saving changes to Notion..."):
@@ -291,12 +483,24 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
 
                 if not original_row.equals(edited_row):
                     page_id = active_df.loc[idx, "page_id"]
+
+                    old_status = original_row["Status"]
+                    old_priority = original_row["Priority"]
+                    ticket_id = original_row["ID"]
+                    creator_name = original_row.get("Created By", "Unknown")
+                    assigned_name = original_row.get("Assigned To", "Unknown")
+
                     success = update_ticket_in_notion(
                         page_id,
                         edited_row["Issue"],
                         edited_row["Status"],
                         edited_row["Priority"],
-                        edited_row["Resolved Date"]
+                        edited_row["Resolved Date"],
+                        old_status=old_status,
+                        old_priority=old_priority,
+                        ticket_id=ticket_id,
+                        creator_name=creator_name,
+                        assigned_name=assigned_name
                     )
                     if success:
                         success_count += 1
@@ -304,14 +508,13 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
                         error_count += 1
 
             if success_count > 0:
-                st.success(f"✅ {success_count} ticket(s) updated successfully!")
+                st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
             if error_count > 0:
                 st.error(f"❌ {error_count} ticket(s) failed to update")
 
             st.session_state.df = fetch_tickets_from_notion()
             st.session_state.original_df = st.session_state.df.copy()
             st.rerun()
-
 # Closed Tickets Section
 st.divider()
 st.header("📦 Closed Tickets")
@@ -369,12 +572,24 @@ if not closed_df.empty:
 
                         if not original_row.equals(edited_row):
                             page_id = closed_df.loc[idx, "page_id"]
+
+                            old_status = original_row["Status"]
+                            old_priority = original_row["Priority"]
+                            ticket_id = original_row["ID"]
+                            creator_name = original_row.get("Created By", "Unknown")
+                            assigned_name = original_row.get("Assigned To", "Unknown")
+
                             success = update_ticket_in_notion(
                                 page_id,
                                 edited_row["Issue"],
                                 edited_row["Status"],
                                 edited_row["Priority"],
-                                edited_row["Resolved Date"]
+                                edited_row["Resolved Date"],
+                                old_status=old_status,
+                                old_priority=old_priority,
+                                ticket_id=ticket_id,
+                                creator_name=creator_name,
+                                assigned_name=assigned_name
                             )
                             if success:
                                 success_count += 1
@@ -382,7 +597,7 @@ if not closed_df.empty:
                                 error_count += 1
 
                     if success_count > 0:
-                        st.success(f"✅ {success_count} ticket(s) updated successfully!")
+                        st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
                     if error_count > 0:
                         st.error(f"❌ {error_count} ticket(s) failed to update")
 
