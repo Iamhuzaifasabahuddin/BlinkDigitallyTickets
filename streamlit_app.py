@@ -4,7 +4,6 @@ import os
 import pandas as pd
 import pytz
 import streamlit as st
-import toml
 from notion_client import Client
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -20,6 +19,8 @@ st.write(
 client = WebClient(token=st.secrets.get("Slack", ""))
 
 name_all = st.secrets.get("name_all", {})
+
+
 @st.cache_resource
 def get_notion_client():
     notion_token = os.getenv("NOTION_TOKEN") or st.secrets.get("NOTION_TOKEN", "")
@@ -94,7 +95,7 @@ def fetch_tickets_from_notion():
 
                 ticket_id = props["ID"]["title"][0]["text"]["content"] if props["ID"]["title"] else ""
                 if not ticket_id or "-" not in ticket_id:
-                    ticket_id = "TICKET-1000"
+                    ticket_id = "TICKET-0001"
 
                 ticket = {
                     "page_id": page["id"],
@@ -111,6 +112,8 @@ def fetch_tickets_from_notion():
                     "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
                                                                                 props["Resolved Date"][
                                                                                     "date"] else None,
+                    "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
+                        "rich_text"] else "",
                 }
                 tickets.append(ticket)
 
@@ -236,9 +239,6 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
         )
 
         user_details = get_user_details(name, assigned)
-        print(f"Sender: {user_details['sender_email']} (ID: {user_details['sender_id']})")
-        print(f"Receiver: {user_details['receiver_email']} (ID: {user_details['receiver_id']})")
-
         send_ticket_notifications(ticket_id, issue, priority, status, user_details, name, assigned)
         return True
     except Exception as e:
@@ -247,7 +247,7 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
 
 
 def send_ticket_update_notifications(ticket_id, old_status, new_status, old_priority, new_priority,
-                                     issue, creator_name, assigned_name, resolved_date=None):
+                                     issue, creator_name, assigned_name, comments, resolved_date=None):
     """Send Slack notifications when a ticket is updated."""
     try:
         # Determine what changed
@@ -258,16 +258,15 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             changes.append(f"*Priority:* {old_priority} → {new_priority}")
         if resolved_date and new_status == "Closed":
             changes.append(f"*Resolved Date:* {resolved_date}")
-
+        if comments:
+            changes.append(f"*Comments:* {comments}")
         if not changes:
-            return  # No meaningful changes to notify about
+            return
 
         changes_text = "\n".join(changes)
 
-        # Get user details
         user_details = get_user_details(creator_name, assigned_name)
 
-        # Message to the assigned user (if they're not the one making the change)
         if user_details['receiver_id']:
             assigned_message = f"""🔔 *Ticket Updated*
 
@@ -283,7 +282,6 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             send_dm(user_details['receiver_id'], assigned_message)
             print(f"✅ Update notification sent to {assigned_name} ({user_details['receiver_email']})")
 
-        # Message to the ticket creator (if different from assignee)
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
             creator_message = f"""🔔 *Your Ticket Was Updated*
 
@@ -303,7 +301,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
         print(f"❌ Error sending update notifications: {e}")
 
 
-def update_ticket_in_notion(page_id, issue, status, priority, resolved_date,
+def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, comments,
                             old_status=None, old_priority=None, ticket_id=None,
                             creator_name=None, assigned_name=None):
     """Update an existing ticket in Notion and send notifications."""
@@ -322,23 +320,28 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date,
         else:
             properties["Resolved Date"] = {"date": None}
 
+        if comments:
+            if isinstance(comments, (str, bytes)):
+                properties["Comments"] = {"rich_text": [{"text": {"content": comments}}]}
         notion.pages.update(
             page_id=page_id,
             properties=properties
         )
 
-        # Send notifications if we have the necessary information
         if all([ticket_id, old_status, old_priority, creator_name, assigned_name]):
             send_ticket_update_notifications(
                 ticket_id, old_status, status, old_priority, priority,
                 issue, creator_name, assigned_name,
-                resolved_date_str if resolved_date and pd.notna(resolved_date) else None
+                comments,
+                resolved_date_str if resolved_date and pd.notna(resolved_date) else None,
+
             )
 
         return True
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
         return False
+
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -469,8 +472,6 @@ edited_active_df = st.data_editor(
     disabled=disabled_columns,
 )
 
-# Replace the "Save Changes to Notion" button section for Active Tickets with this:
-
 if st.session_state.authenticated and not edited_active_df.equals(display_active_df):
     if st.button("💾 Save Changes to Notion", type="primary", key="save_active"):
         with st.spinner("Saving changes to Notion..."):
@@ -496,6 +497,7 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
                         edited_row["Status"],
                         edited_row["Priority"],
                         edited_row["Resolved Date"],
+                        edited_row["Comments"],
                         old_status=old_status,
                         old_priority=old_priority,
                         ticket_id=ticket_id,
@@ -585,6 +587,7 @@ if not closed_df.empty:
                                 edited_row["Status"],
                                 edited_row["Priority"],
                                 edited_row["Resolved Date"],
+                                edited_row["Comments"],
                                 old_status=old_status,
                                 old_priority=old_priority,
                                 ticket_id=ticket_id,
