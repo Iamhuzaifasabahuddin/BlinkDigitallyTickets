@@ -382,41 +382,57 @@ with st.form("add_ticket_form"):
 
 if submitted:
     if not issue.strip():
-        st.error("Please describe the issue before submitting.")
+        st.error("⚠️ Please describe the issue before submitting.")
+    elif not name or not assigned:
+        st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
     else:
-        with st.spinner("Fetching latest ticket from Notion..."):
-            try:
-                results = notion.databases.query(
-                    database_id=DATABASE_ID,
-                    page_size=1,
-                    sorts=[{"timestamp": "created_time", "direction": "descending"}]
-                )
+        try:
+            with st.spinner("Fetching latest ticket from Notion..."):
+                try:
+                    results = notion.databases.query(
+                        database_id=DATABASE_ID,
+                        page_size=1,
+                        sorts=[{"timestamp": "created_time", "direction": "descending"}]
+                    )
 
-                if results["results"]:
-                    latest_page = results["results"][0]
-                    latest_id = latest_page["properties"]["ID"]["title"][0]["text"]["content"] if \
-                        latest_page["properties"]["ID"]["title"] else "TICKET-0000"
+                    if results.get("results"):
+                        latest_page = results["results"][0]
+                        latest_id_prop = latest_page["properties"]["ID"]["title"]
+                        latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
 
-                    if "-" in latest_id:
-                        recent_ticket_number = int(latest_id.split("-")[1])
+                        if "-" in latest_id:
+                            recent_ticket_number = int(latest_id.split("-")[1])
+                        else:
+                            recent_ticket_number = 0
                     else:
-                        recent_ticket_number = 0000
-                else:
-                    recent_ticket_number = 0000
-            except Exception as e:
-                st.warning(f"Could not fetch latest ticket: {e}. Starting from TICKET-1001")
-                recent_ticket_number = 0000
+                        recent_ticket_number = 0
 
-        new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+                except Exception as e:
+                    st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
+                    recent_ticket_number = 0
 
-        with st.spinner("Creating ticket in Notion..."):
-            success = create_ticket_in_notion(new_ticket_id, issue, "Open", priority, today, name, assigned)
+            new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
 
-        if success:
-            st.success("Ticket submitted successfully!")
-            st.session_state.df = fetch_tickets_from_notion()
-            st.session_state.original_df = st.session_state.df.copy()
-            st.rerun()
+            with st.spinner("Creating ticket in Notion..."):
+                try:
+                    success = create_ticket_in_notion(
+                        new_ticket_id, issue, "Open", priority, today, name, assigned
+                    )
+
+                    if success:
+                        st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
+                        st.session_state.df = fetch_tickets_from_notion()
+                        st.session_state.original_df = st.session_state.df.copy()
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to create the ticket in Notion. Please try again later.")
+
+                except Exception as e:
+                    st.error(f"🚨 Error while creating ticket in Notion: {e}")
+        except Exception as e:
+            st.error(f"🚨 Error while creating ticket in Notion: {e}")
+
+
 
 df = st.session_state.df.copy()
 
