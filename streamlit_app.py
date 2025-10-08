@@ -321,8 +321,8 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
             properties["Resolved Date"] = {"date": None}
 
         if comments:
-            if isinstance(comments, (str, bytes)):
-                properties["Comments"] = {"rich_text": [{"text": {"content": comments}}]}
+            properties["Comments"] = {"rich_text": [{"text": {"content": comments}}]}
+
         notion.pages.update(
             page_id=page_id,
             properties=properties
@@ -418,25 +418,47 @@ if submitted:
             st.session_state.original_df = st.session_state.df.copy()
             st.rerun()
 
-# Separate active and closed tickets
-active_df = st.session_state.df[st.session_state.df["Status"].isin(["Open", "In Progress"])].copy()
-closed_df = st.session_state.df[st.session_state.df["Status"] == "Closed"].copy()
+df = st.session_state.df.copy()
 
-st.header("Active Tickets")
-st.write(f"Number of active tickets: `{len(active_df)}`")
+df["Month"] = df["Date Submitted"].dt.strftime("%B")
+
+unique_months = sorted(df["Month"].unique().tolist())
+months = ["All"] + unique_months
+
+current_month = datetime.datetime.now(pkt).strftime("%B")
+default_index = months.index(current_month) if current_month in months else 0
+
+selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
+if selected_month == "All":
+    filtered_df = df.copy()
+else:
+    filtered_df = df[df["Month"] == selected_month].copy()
+
+st.subheader(f"📊 Showing tickets for: **{selected_month}**")
+st.write(f"Total tickets found: `{len(filtered_df)}`")
+
+if filtered_df.empty:
+    st.info("No tickets found for the selected month.")
+    st.stop()
+
+active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
+closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
+
+st.header("🟢 Active Tickets")
+st.write(f"Number of active tickets this month: `{len(active_df)}`")
 
 if st.session_state.authenticated:
     st.info(
-        "You can edit the tickets by double clicking on a cell. Click 'Save Changes to Notion' "
-        "to sync your edits. You can also sort the table by clicking on the column headers.",
+        "You can edit tickets by double-clicking a cell. Click 'Save Changes to Notion' "
+        "to sync your edits. You can also sort columns by clicking headers.",
         icon="✍️",
     )
 else:
     st.warning("🔒 Login with admin password to edit tickets", icon="⚠️")
 
-display_active_df = active_df.drop(columns=["page_id"]) if "page_id" in active_df.columns else active_df
+display_active_df = active_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted"]
+disabled_columns = ["ID", "Date Submitted", "Month"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -446,63 +468,36 @@ edited_active_df = st.data_editor(
     hide_index=True,
     key="active_editor",
     column_config={
-        "Status": st.column_config.SelectboxColumn(
-            "Status",
-            help="Ticket status",
-            options=["Open", "In Progress", "Closed"],
-            required=True,
-        ),
-        "Priority": st.column_config.SelectboxColumn(
-            "Priority",
-            help="Priority",
-            options=["High", "Medium", "Low"],
-            required=True,
-        ),
-        "Date Submitted": st.column_config.DateColumn(
-            "Date Submitted",
-            help="Date when ticket was submitted",
-            format="YYYY-MM-DD",
-        ),
-        "Resolved Date": st.column_config.DateColumn(
-            "Resolved Date",
-            help="Date when ticket was resolved",
-            format="YYYY-MM-DD",
-        ),
+        "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"], required=True),
+        "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
+        "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+        "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
     },
     disabled=disabled_columns,
 )
 
 if st.session_state.authenticated and not edited_active_df.equals(display_active_df):
-    if st.button("💾 Save Changes to Notion", type="primary", key="save_active"):
+    if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
         with st.spinner("Saving changes to Notion..."):
-            success_count = 0
-            error_count = 0
-
+            success_count, error_count = 0, 0
             for idx in edited_active_df.index:
                 original_row = display_active_df.loc[idx]
                 edited_row = edited_active_df.loc[idx]
 
                 if not original_row.equals(edited_row):
                     page_id = active_df.loc[idx, "page_id"]
-
-                    old_status = original_row["Status"]
-                    old_priority = original_row["Priority"]
-                    ticket_id = original_row["ID"]
-                    creator_name = original_row.get("Created By", "Unknown")
-                    assigned_name = original_row.get("Assigned To", "Unknown")
-
                     success = update_ticket_in_notion(
-                        page_id,
-                        edited_row["Issue"],
-                        edited_row["Status"],
-                        edited_row["Priority"],
-                        edited_row["Resolved Date"],
-                        edited_row["Comments"],
-                        old_status=old_status,
-                        old_priority=old_priority,
-                        ticket_id=ticket_id,
-                        creator_name=creator_name,
-                        assigned_name=assigned_name
+                        page_id=page_id,
+                        issue=edited_row["Issue"],
+                        status=edited_row["Status"],
+                        priority=edited_row["Priority"],
+                        resolved_date=edited_row["Resolved Date"],
+                        comments=edited_row["Comments"],
+                        old_status=original_row["Status"],
+                        old_priority=original_row["Priority"],
+                        ticket_id=original_row["ID"],
+                        creator_name=original_row.get("Created By", "Unknown"),
+                        assigned_name=original_row.get("Assigned To", "Unknown"),
                     )
                     if success:
                         success_count += 1
@@ -512,21 +507,23 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
             if success_count > 0:
                 st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
             if error_count > 0:
-                st.error(f"❌ {error_count} ticket(s) failed to update")
+                st.error(f"❌ {error_count} ticket(s) failed to update.")
 
             st.session_state.df = fetch_tickets_from_notion()
             st.session_state.original_df = st.session_state.df.copy()
             st.rerun()
-# Closed Tickets Section
+
 st.divider()
 st.header("📦 Closed Tickets")
-st.write(f"Number of closed tickets: `{len(closed_df)}`")
+st.write(f"Number of closed tickets this month: `{len(closed_df)}`")
 
-if not closed_df.empty:
+if closed_df.empty:
+    st.info("No closed tickets for the selected month.")
+else:
     with st.expander("View Closed Tickets", expanded=False):
-        display_closed_df = closed_df.drop(columns=["page_id"]) if "page_id" in closed_df.columns else closed_df
+        display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
@@ -536,63 +533,38 @@ if not closed_df.empty:
             hide_index=True,
             key="closed_editor",
             column_config={
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    help="Ticket status",
-                    options=["Open", "In Progress", "Closed"],
-                    required=True,
-                ),
-                "Priority": st.column_config.SelectboxColumn(
-                    "Priority",
-                    help="Priority",
-                    options=["High", "Medium", "Low"],
-                    required=True,
-                ),
-                "Date Submitted": st.column_config.DateColumn(
-                    "Date Submitted",
-                    help="Date when ticket was submitted",
-                    format="YYYY-MM-DD",
-                ),
-                "Resolved Date": st.column_config.DateColumn(
-                    "Resolved Date",
-                    help="Date when ticket was resolved",
-                    format="YYYY-MM-DD",
-                ),
+                "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                           required=True),
+                "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
+                                                             required=True),
+                "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+                "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
             },
             disabled=disabled_closed_columns,
         )
 
         if st.session_state.authenticated and not edited_closed_df.equals(display_closed_df):
-            if st.button("💾 Save Changes to Notion", type="primary", key="save_closed"):
+            if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
                 with st.spinner("Saving changes to Notion..."):
-                    success_count = 0
-                    error_count = 0
-
+                    success_count, error_count = 0, 0
                     for idx in edited_closed_df.index:
                         original_row = display_closed_df.loc[idx]
                         edited_row = edited_closed_df.loc[idx]
 
                         if not original_row.equals(edited_row):
                             page_id = closed_df.loc[idx, "page_id"]
-
-                            old_status = original_row["Status"]
-                            old_priority = original_row["Priority"]
-                            ticket_id = original_row["ID"]
-                            creator_name = original_row.get("Created By", "Unknown")
-                            assigned_name = original_row.get("Assigned To", "Unknown")
-
                             success = update_ticket_in_notion(
-                                page_id,
-                                edited_row["Issue"],
-                                edited_row["Status"],
-                                edited_row["Priority"],
-                                edited_row["Resolved Date"],
-                                edited_row["Comments"],
-                                old_status=old_status,
-                                old_priority=old_priority,
-                                ticket_id=ticket_id,
-                                creator_name=creator_name,
-                                assigned_name=assigned_name
+                                page_id=page_id,
+                                issue=edited_row["Issue"],
+                                status=edited_row["Status"],
+                                priority=edited_row["Priority"],
+                                resolved_date=edited_row["Resolved Date"],
+                                comments=edited_row["Comments"],
+                                old_status=original_row["Status"],
+                                old_priority=original_row["Priority"],
+                                ticket_id=original_row["ID"],
+                                creator_name=original_row.get("Created By", "Unknown"),
+                                assigned_name=original_row.get("Assigned To", "Unknown"),
                             )
                             if success:
                                 success_count += 1
@@ -602,10 +574,8 @@ if not closed_df.empty:
                     if success_count > 0:
                         st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
                     if error_count > 0:
-                        st.error(f"❌ {error_count} ticket(s) failed to update")
+                        st.error(f"❌ {error_count} ticket(s) failed to update.")
 
                     st.session_state.df = fetch_tickets_from_notion()
                     st.session_state.original_df = st.session_state.df.copy()
                     st.rerun()
-else:
-    st.info("No closed tickets yet.")
