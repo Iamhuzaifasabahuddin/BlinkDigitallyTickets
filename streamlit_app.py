@@ -363,7 +363,7 @@ with st.sidebar:
             st.session_state.authenticated = False
             st.rerun()
 
-if "df" not in st.session_state or st.button("🔄 Refresh from Notion"):
+if st.button("🔄 Fetch Lateest"):
     with st.spinner("Loading tickets from Notion..."):
         st.session_state.df = fetch_tickets_from_notion()
         st.session_state.original_df = st.session_state.df.copy()
