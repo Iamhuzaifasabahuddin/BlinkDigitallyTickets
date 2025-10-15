@@ -363,7 +363,7 @@ with st.sidebar:
             st.session_state.authenticated = False
             st.rerun()
 
-if st.button("🔄 Fetch Lateest"):
+if st.button("🔄 Fetch Latest"):
     with st.spinner("Loading tickets from Notion..."):
         st.session_state.df = fetch_tickets_from_notion()
         st.session_state.original_df = st.session_state.df.copy()
@@ -433,6 +433,10 @@ if submitted:
             st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
 
+
+if "df" not in st.session_state:
+    st.session_state.df = fetch_tickets_from_notion()
+    st.session_state.original_df = st.session_state.df.copy()
 
 df = st.session_state.df.copy()
 
