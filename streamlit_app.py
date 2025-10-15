@@ -268,7 +268,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
         if old_priority != new_priority:
             changes.append(f"*Priority:* {old_priority} → {new_priority}")
         if resolved_date and new_status == "Closed":
-            changes.append(f"*Resolved Date (PKST):* {resolved_date.strftime('%d-%B-%Y')}")
+            changes.append(f"*Resolved Date (PKST):* {resolved_date}")
             changes.append(f"*Resolved Time (PKST):* {formatted_time}")
         if comments:
             changes.append(f"*Comments:* {comments}")
@@ -332,7 +332,7 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
                 now_pkt = datetime.datetime.now(pkt)
                 formatted_time = now_pkt.time().strftime("%I:%M %p")
                 properties["Resolved Date"] = {"date": {"start": resolved_date_str}}
-                properties["Resolved Time"] = {"time": {"start": formatted_time}}
+                properties["Resolved Time"] = {"rich_text": [{"text": {"content": formatted_time}}]}
         else:
             properties["Resolved Date"] = {"date": None}
 
@@ -349,14 +349,14 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
                 ticket_id, old_status, status, old_priority, priority,
                 issue, creator_name, assigned_name,
                 comments,
-                resolved_date_str if resolved_date and pd.notna(resolved_date) else None,
+                resolved_date.strftime("%d-%B-%Y"),
 
             )
 
         return True
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
-        return False
+        return Falsek
 
 
 if "authenticated" not in st.session_state:
