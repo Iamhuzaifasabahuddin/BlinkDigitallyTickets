@@ -105,6 +105,7 @@ def fetch_tickets_from_notion():
                     "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
                     "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
                         "date"] else "",
+                    "Submitted Time": props["Submitted Time"]["rich_text"][0]["text"] ["content"] if props["Submitted Time"]["rich_text"] else "",
                     "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"][
                         "name"] else "",
                     "Assigned To": props["Assigned To"]["select"]["name"] if props["Assigned To"]["select"][
@@ -112,6 +113,7 @@ def fetch_tickets_from_notion():
                     "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
                                                                                 props["Resolved Date"][
                                                                                     "date"] else None,
+                    "Resolved Time": props["Resolved Time"]["rich_text"][0]["text"] ["content"] if props["Resolved Time"]["rich_text"] else "",
                     "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
                         "rich_text"] else "",
                 }
@@ -131,19 +133,20 @@ def fetch_tickets_from_notion():
         return df
     except Exception as e:
         st.error(f"Error fetching tickets from Notion: {e}")
-        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Resolved Date"])
+        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments"])
 
 
-def send_ticket_notifications(ticket_id, issue, priority, status, user_details, creator_name, assigned_name):
+def send_ticket_notifications(ticket_id, issue, priority, status,date, time,  user_details, creator_name, assigned_name):
     """Send Slack notifications to both ticket creator and assigned user."""
     try:
-        # Message to the assigned user
         if user_details['receiver_id']:
             assigned_message = f"""🎫 *New Ticket Assigned to You*
 
 *Ticket ID:* {ticket_id}
 *Priority:* {priority}
 *Status:* {status}
+*Date (PKST):* {date}
+*Time (PKST):* {time}
 *Created By:* {creator_name}
 
 *Issue:*
@@ -156,13 +159,14 @@ Please review and update the ticket status accordingly."""
         else:
             print(f"⚠️ Could not send notification to {assigned_name} - Slack ID not found")
 
-        # Message to the ticket creator (confirmation)
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
             creator_message = f"""✅ *Ticket Created Successfully*
 
 *Ticket ID:* {ticket_id}
 *Priority:* {priority}
 *Status:* {status}
+*Date (PKST):* {date}
+*Time (PKST):* {time}
 *Assigned To:* {assigned_name}
 
 *Issue:*
@@ -225,6 +229,10 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
         else:
             date_submitted_str = str(date_submitted)
 
+        pkt = pytz.timezone("Asia/Karachi")
+        now_pkt = datetime.datetime.now(pkt)
+        formatted_time = now_pkt.time().strftime("%I:%M %p")
+        formatted_date = date_submitted.strftime("%d-%B-%Y")
         notion.pages.create(
             parent={"database_id": DATABASE_ID},
             properties={
@@ -235,11 +243,12 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
                 "Created By": {"select": {"name": name}},
                 "Assigned To": {"select": {"name": assigned}},
                 "Date Submitted": {"date": {"start": date_submitted_str}},
+                "Submitted Time": {"rich_text": [{"text": {"content": formatted_time}}]},
             }
         )
 
         user_details = get_user_details(name, assigned)
-        send_ticket_notifications(ticket_id, issue, priority, status, user_details, name, assigned)
+        send_ticket_notifications(ticket_id, issue, priority, status,formatted_date, formatted_time, user_details, name, assigned)
         return True
     except Exception as e:
         st.error(f"Error creating ticket: {e}")
@@ -250,14 +259,17 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
                                      issue, creator_name, assigned_name, comments, resolved_date=None):
     """Send Slack notifications when a ticket is updated."""
     try:
-        # Determine what changed
+        pkt = pytz.timezone("Asia/Karachi")
+        now_pkt = datetime.datetime.now(pkt)
+        formatted_time = now_pkt.time().strftime("%I:%M %p")
         changes = []
         if old_status != new_status:
             changes.append(f"*Status:* {old_status} → {new_status}")
         if old_priority != new_priority:
             changes.append(f"*Priority:* {old_priority} → {new_priority}")
         if resolved_date and new_status == "Closed":
-            changes.append(f"*Resolved Date:* {resolved_date}")
+            changes.append(f"*Resolved Date (PKST):* {resolved_date.strftime('%d-%B-%Y')}")
+            changes.append(f"*Resolved Time (PKST):* {formatted_time}")
         if comments:
             changes.append(f"*Comments:* {comments}")
         if not changes:
@@ -316,7 +328,11 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
             if isinstance(resolved_date, (pd.Timestamp, datetime.datetime, datetime.date)):
                 resolved_date_str = resolved_date.strftime("%Y-%m-%d") if hasattr(resolved_date, 'strftime') else str(
                     resolved_date)
+                pkt = pytz.timezone("Asia/Karachi")
+                now_pkt = datetime.datetime.now(pkt)
+                formatted_time = now_pkt.time().strftime("%I:%M %p")
                 properties["Resolved Date"] = {"date": {"start": resolved_date_str}}
+                properties["Resolved Time"] = {"time": {"start": formatted_time}}
         else:
             properties["Resolved Date"] = {"date": None}
 
@@ -374,7 +390,7 @@ pkt = pytz.timezone("Asia/Karachi")
 now_pkt = datetime.datetime.now(pkt)
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
-    today = st.date_input("Date", now_pkt.date())
+    today = st.date_input("Date (PKST)", now_pkt.date())
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
     name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
     assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""))
@@ -476,9 +492,9 @@ if st.session_state.authenticated:
 else:
     st.warning("🔒 Login with admin password to edit tickets", icon="⚠️")
 
-display_active_df = active_df.drop(columns=["page_id", "Month"], errors="ignore")
+display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -543,7 +559,7 @@ else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
