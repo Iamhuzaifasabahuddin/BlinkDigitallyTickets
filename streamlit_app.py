@@ -356,7 +356,7 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
         return True
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
-        return Falsek
+        return False
 
 
 if "authenticated" not in st.session_state:
@@ -494,7 +494,7 @@ else:
 
 display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -559,7 +559,7 @@ else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
