@@ -345,12 +345,15 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
         )
 
         if all([ticket_id, old_status, old_priority, creator_name, assigned_name]):
+            formatted_resolved_date = None
+            if resolved_date and pd.notna(resolved_date):
+                formatted_resolved_date = resolved_date.strftime("%d-%B-%Y")
+
             send_ticket_update_notifications(
                 ticket_id, old_status, status, old_priority, priority,
                 issue, creator_name, assigned_name,
                 comments,
-                resolved_date.strftime("%d-%B-%Y"),
-
+                formatted_resolved_date,
             )
 
         return True
