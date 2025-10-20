@@ -19,8 +19,8 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: |
-          pip install slack-sdk
+        run: pip install slack-sdk aiohttp
+
 
       - name: Send monthly summary
         env:
