@@ -1,6 +1,6 @@
 import os
 
-from slack import WebClient
+from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 bot = WebClient(token=os.environ['SLACK_BOT_TOKEN'])
