@@ -126,9 +126,9 @@ def fetch_tickets_from_notion():
 
         if not df.empty:
             if "Date Submitted" in df.columns:
-                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"], errors='coerce')
+                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"],format="%Y-%m-%d", errors='coerce')
             if "Resolved Date" in df.columns:
-                df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], errors='coerce')
+                df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], format="%Y-%m-%d", errors='coerce')
 
         return df
     except Exception as e:

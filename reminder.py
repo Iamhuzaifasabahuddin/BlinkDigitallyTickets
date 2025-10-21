@@ -27,4 +27,4 @@ def send_dm(user_id, message):
 
 if __name__ == '__main__':
     send_dm(get_user_id_by_email('huzaifa.sabah@topsoftdigitals.pk'),
-            "🔔 Tickets Look Up reminder ")
+            "🔔 Reminder: Check your open tickets!")
