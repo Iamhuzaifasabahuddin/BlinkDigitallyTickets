@@ -19,7 +19,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install slack-sdk aiohttp notion-client
+        run: pip install slack-sdk notion-client
 
 
       - name: Send monthly summary

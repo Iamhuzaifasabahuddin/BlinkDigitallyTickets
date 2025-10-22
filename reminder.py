@@ -1,12 +1,10 @@
 import os
 
-from dotenv import load_dotenv
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from notion_client import Client
 import pandas as pd
 
-load_dotenv("tokens.env")
 bot = WebClient(token=os.environ['SLACK_BOT_TOKEN'])
 
 names = {
