@@ -1,5 +1,6 @@
 import os
-
+from dotenv import load_dotenv
+load_dotenv("tokens.env")
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from notion_client import Client
@@ -120,18 +121,19 @@ def send_dm(user_id, message):
 if __name__ == '__main__':
     name_list = fetch_tickets_from_notion()
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
-
+    hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
     for name in name_list:
+        id_ = get_user_id_by_email(names.get(name))
         message = (
-            f"🔔 *Reminder for:* *{name}*\n"
-            f"Please check your open tickets and provide an update to *Huzaifa* when possible. 📝"
+            f"🔔 *Reminder for:* *<@{id_}>* \n"
+            f"‼ Please check your open tickets and provide an update to *<@{hexz_id}>* when possible. 📝"
         )
         send_dm(
-            get_user_id_by_email(name),
+            id_,
             message
         )
         send_dm(
-            get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk"),
-        f"🚀 Notification sent to {name}!")
-    send_dm(get_user_id_by_email('huzaifa.sabah@topsoftdigitals.pk'),
+            hexz_id,
+        f"🚀 Notification sent to *<@{id_}>*!")
+    send_dm(hexz_id,
             "🔔 Reminder: Check your open tickets!")
