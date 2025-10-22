@@ -119,6 +119,7 @@ def send_dm(user_id, message):
 
 if __name__ == '__main__':
     name_list = fetch_tickets_from_notion()
+    print(name_list)
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
 
     for name in name_list:
@@ -126,8 +127,9 @@ if __name__ == '__main__':
             f"🔔 *Reminder for:* *{name}*\n"
             f"Please check your open tickets and provide an update to *Huzaifa* when possible. 📝"
         )
+        print(names.get(name))
         send_dm(
-            get_user_id_by_email(names.get(name)),
+            get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk"),
             message
         )
         send_dm(
