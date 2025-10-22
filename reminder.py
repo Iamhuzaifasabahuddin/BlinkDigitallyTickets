@@ -24,13 +24,13 @@ names = {
 }
 
 def get_notion_client():
-    notion_token = os.environ.get("NOTION_TOKEN", "")
+    notion_token = os.environ['NOTION_TOKEN']
     if not notion_token:
         return False
 
     return Client(auth=notion_token)
 
-DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+DATABASE_ID = os.environ['NOTION_DATABASE_ID']
 notion = get_notion_client()
 def fetch_tickets_from_notion():
     """Fetch all tickets from Notion database with pagination."""
@@ -119,7 +119,6 @@ def send_dm(user_id, message):
 
 if __name__ == '__main__':
     name_list = fetch_tickets_from_notion()
-    print(name_list)
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
 
     for name in name_list:
@@ -127,7 +126,6 @@ if __name__ == '__main__':
             f"🔔 *Reminder for:* *{name}*\n"
             f"Please check your open tickets and provide an update to *Huzaifa* when possible. 📝"
         )
-        print(names.get(name))
         send_dm(
             get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk"),
             message
