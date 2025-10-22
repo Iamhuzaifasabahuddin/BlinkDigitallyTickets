@@ -2,7 +2,7 @@ name: Daily Ticket Reminder
 
 on:
   schedule:
-    - cron: '0 14 * * 1-5'
+    - cron: '30 14 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install slack-sdk aiohttp
+        run: pip install slack-sdk aiohttp notion-client
 
 
       - name: Send monthly summary
