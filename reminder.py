@@ -127,7 +127,7 @@ if __name__ == '__main__':
             f"Please check your open tickets and provide an update to *Huzaifa* when possible. 📝"
         )
         send_dm(
-            get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk"),
+            get_user_id_by_email(name),
             message
         )
         send_dm(
