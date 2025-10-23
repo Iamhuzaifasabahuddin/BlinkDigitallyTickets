@@ -1,6 +1,4 @@
 import os
-from dotenv import load_dotenv
-load_dotenv("tokens.env")
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from notion_client import Client
