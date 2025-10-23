@@ -77,7 +77,7 @@ def fetch_tickets_from_notion():
         return combined
     except Exception as e:
         print(e)
-        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments"])
+        return pd.DataFrame()
 
 def get_user_id_by_email(email):
     try:
