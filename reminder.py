@@ -118,14 +118,13 @@ if __name__ == '__main__':
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
     for name in name_list:
-        print(name)
         id_ = get_user_id_by_email(names.get(name))
         message = (
             f"🔔 *Reminder for:* *<@{id_}>* \n"
             f"‼ Please check your open tickets and provide an update to *<@{hexz_id}>* when possible. 📝"
         )
         send_dm(
-            hexz_id,
+            id_,
             message
         )
         send_dm(
