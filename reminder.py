@@ -6,17 +6,11 @@ import pandas as pd
 
 bot = WebClient(token=os.environ['SLACK_BOT_TOKEN'])
 
-
-
-def get_notion_client():
-    notion_token = os.environ['NOTION_TOKEN']
-    if not notion_token:
-        return False
-
-    return Client(auth=notion_token)
+notion_token = os.environ['NOTION_TOKEN']
+notion = Client(auth=notion_token)
 
 DATABASE_ID = os.environ['NOTION_DATABASE_ID']
-notion = get_notion_client()
+
 def fetch_tickets_from_notion():
     """Fetch all tickets from Notion database with pagination."""
     try:
