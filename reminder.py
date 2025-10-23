@@ -19,13 +19,13 @@ def fetch_tickets_from_notion():
         start_cursor = None
         while has_more:
             if start_cursor:
-                results = notion.databases.retrieve(
+                results = notion.databases.query(
                     database_id=DATABASE_ID,
                     start_cursor=start_cursor,
                     sorts=[{"timestamp": "created_time", "direction": "ascending"}]
                 )
             else:
-                results = notion.databases.retrieve(database_id=DATABASE_ID,
+                results = notion.databases.query(database_id=DATABASE_ID,
                                                  sorts=[{"timestamp": "created_time", "direction": "ascending"}])
 
             for page in results["results"]:
