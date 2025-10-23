@@ -73,6 +73,7 @@ def fetch_tickets_from_notion():
         name_list_assigned = df["Assigned To"].unique().tolist()
         name_list_created = df["Created By"].unique().tolist()
         combined = list(set(name_list_assigned + name_list_created))
+        print(combined)
         return combined
     except Exception as e:
         return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments"])
@@ -82,7 +83,7 @@ def get_user_id_by_email(email):
         response = bot.users_lookupByEmail(email=email)
         return response['user']['id']
     except SlackApiError as e:
-        print(f"Error finding user: {e.response['error']}")
+        print(f"Error finding user: {e.response['error']} {email}")
         return None
 
 
@@ -116,6 +117,7 @@ if __name__ == '__main__':
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
     for name in name_list:
+        print(name)
         id_ = get_user_id_by_email(names.get(name))
         message = (
             f"🔔 *Reminder for:* *<@{id_}>* \n"
