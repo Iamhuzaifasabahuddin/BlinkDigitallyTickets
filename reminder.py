@@ -6,21 +6,7 @@ import pandas as pd
 
 bot = WebClient(token=os.environ['SLACK_BOT_TOKEN'])
 
-names = {
-    "Aiza Ali": "aiza.ali@topsoftdigitals.pk",
-    "Ahmed Asif": "ahmed.asif@topsoftdigitals.pk",
-    "Asad Waqas": "asad.waqas@topsoftdigitals.pk",
-    "Maheen Sami": "maheen.sami@topsoftdigitals.pk",
-    "Mubashir Khan": "Mubashir.khan@topsoftdigitals.pk",
-    "Muhammad Ali": "muhammad.ali@topsoftdigitals.pk",
-    "Valencia Angelo": "valencia.angelo@topsoftdigitals.pk",
-    "Ukasha Asadullah": "ukasha.asadullah@topsoftdigitals.pk",
-    "Ahsan Javed": "ahsan.javed@topsoftdigitals.pk",
-    "Youha": "youha.khan@topsoftdigitals.pk",
-    "Emaan Zaidi": "emaan.zaidi@topsoftdigitals.pk",
-    "Elishba": "elishba@topsoftdigitals.pk",
-    "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk"
-}
+
 
 def get_notion_client():
     notion_token = os.environ['NOTION_TOKEN']
@@ -117,6 +103,21 @@ def send_dm(user_id, message):
 
 
 if __name__ == '__main__':
+    names = {
+        "Aiza Ali": "aiza.ali@topsoftdigitals.pk",
+        "Ahmed Asif": "ahmed.asif@topsoftdigitals.pk",
+        "Asad Waqas": "asad.waqas@topsoftdigitals.pk",
+        "Maheen Sami": "maheen.sami@topsoftdigitals.pk",
+        "Mubashir Khan": "Mubashir.khan@topsoftdigitals.pk",
+        "Muhammad Ali": "muhammad.ali@topsoftdigitals.pk",
+        "Valencia Angelo": "valencia.angelo@topsoftdigitals.pk",
+        "Ukasha Asadullah": "ukasha.asadullah@topsoftdigitals.pk",
+        "Ahsan Javed": "ahsan.javed@topsoftdigitals.pk",
+        "Youha": "youha.khan@topsoftdigitals.pk",
+        "Emaan Zaidi": "emaan.zaidi@topsoftdigitals.pk",
+        "Elishba": "elishba@topsoftdigitals.pk",
+        "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk"
+    }
     name_list = fetch_tickets_from_notion()
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
@@ -127,7 +128,7 @@ if __name__ == '__main__':
             f"‼ Please check your open tickets and provide an update to *<@{hexz_id}>* when possible. 📝"
         )
         send_dm(
-            id_,
+            hexz_id,
             message
         )
         send_dm(
