@@ -31,6 +31,7 @@ def get_notion_client():
 
 
 DATABASE_ID = os.getenv("NOTION_DATABASE_ID") or st.secrets.get("NOTION_DATABASE_ID", "")
+DATASOURCE_ID = os.getenv("NOTION_DATASOURCE_ID") or st.secrets.get("NOTION_DATASOURCE_ID", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or st.secrets.get("ADMIN_PASSWORD", "")
 
 if not DATABASE_ID:
@@ -81,13 +82,13 @@ def fetch_tickets_from_notion():
         start_cursor = None
         while has_more:
             if start_cursor:
-                results = notion.databases.query(
-                    database_id=DATABASE_ID,
+                results = notion.data_sources.query(
+                    data_source_id=DATASOURCE_ID,
                     start_cursor=start_cursor,
                     sorts=[{"timestamp": "created_time", "direction": "ascending"}]
                 )
             else:
-                results = notion.databases.query(database_id=DATABASE_ID,
+                results = notion.data_sources.query(data_source_id=DATASOURCE_ID,
                                                  sorts=[{"timestamp": "created_time", "direction": "ascending"}])
 
             for page in results["results"]:
