@@ -146,8 +146,8 @@ def send_ticket_notifications(ticket_id, issue, priority, status,date, time,  us
 *Ticket ID:* {ticket_id}
 *Priority:* {priority}
 *Status:* {status}
-*Date (PKST):* {date}
-*Time (PKST):* {time}
+*Created Date (PKST):* {date}
+*Created Time (PKST):* {time}
 *Created By:* {creator_name}
 
 *Issue:*
@@ -166,8 +166,8 @@ Please review and update the ticket status accordingly."""
 *Ticket ID:* {ticket_id}
 *Priority:* {priority}
 *Status:* {status}
-*Date (PKST):* {date}
-*Time (PKST):* {time}
+*Created Date (PKST):* {date}
+*Created Time (PKST):* {time}
 *Assigned To:* {assigned_name}
 
 *Issue:*
@@ -409,8 +409,8 @@ if submitted:
         try:
             with st.spinner("Fetching latest ticket from Notion..."):
                 try:
-                    results = notion.databases.query(
-                        database_id=DATABASE_ID,
+                    results = notion.data_sources.query(
+                        data_source_id=DATASOURCE_ID,
                         page_size=1,
                         sorts=[{"timestamp": "created_time", "direction": "descending"}]
                     )
