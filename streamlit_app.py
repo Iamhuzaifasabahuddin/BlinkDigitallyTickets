@@ -12,6 +12,7 @@ hide_st_style = """
     <style>   
     ._link_gzau3_10 {visibility: hidden;}
     ._profilePreview_gzau3_63 {visibility: hidden;}
+    .st-emotion-cache-scp8yw{visibility: hidden;}
     </style>
     """
 st.markdown(hide_st_style, unsafe_allow_html=True)
