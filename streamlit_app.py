@@ -9,10 +9,9 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 hide_st_style = """
-    <style>
-    #MainMenu {visibility: hidden;}  /* Hide the hamburger menu */
-    footer {visibility: hidden;}     /* Hide the footer */
-    header {visibility: hidden;}     /* Hide the header */
+    <style>   
+    ._link_gzau3_10 {visibility: hidden;}
+    ._profilePreview_gzau3_63 {visibility: hidden;}
     </style>
     """
 st.markdown(hide_st_style, unsafe_allow_html=True)
