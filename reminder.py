@@ -122,7 +122,7 @@ if __name__ == '__main__':
         id_ = get_user_id_by_email(names.get(name))
         message = (
             f"🔔 *Reminder for:* *<@{id_}>* \n"
-            f"‼ Please check your open tickets and provide an update to *<@{hexz_id}>* when possible. 📝"
+            f"‼ Please check your open tickets @ https://blinkdigitallytickets.streamlit.app/ and provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
         )
         send_dm(
             id_,

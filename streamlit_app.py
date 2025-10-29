@@ -483,12 +483,10 @@ with col2:
         if selected_ticket:
             ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
 
-
-            st.text_input("Current Issue", value=ticket_data["Issue"], disabled=True)
-            st.text("📊 *Current Status:* " + ticket_data["Status"])
-            st.text("⏰ *Current Priority:* " + ticket_data["Priority"])
-            st.text("➕ *Created By:* " + ticket_data["Created By"])
-            st.text("📕 *Assigned To:* " + ticket_data["Assigned To"])
+            st.markdown("📊 **Current Status:** " + ticket_data["Status"])
+            st.markdown("⏰ **Current Priority:** " + ticket_data["Priority"])
+            st.markdown("➕ **Created By:** " + ticket_data["Created By"])
+            st.markdown("📕 **Assigned To:** " + ticket_data["Assigned To"])
 
 
             with st.form("update_ticket_form"):
