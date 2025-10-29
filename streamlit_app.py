@@ -8,7 +8,14 @@ from notion_client import Client
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-# Show app title and description.
+hide_st_style = """
+    <style>
+    #MainMenu {visibility: hidden;}  /* Hide the hamburger menu */
+    footer {visibility: hidden;}     /* Hide the footer */
+    header {visibility: hidden;}     /* Hide the header */
+    </style>
+    """
+st.markdown(hide_st_style, unsafe_allow_html=True)
 st.set_page_config(page_title="Support tickets", page_icon="🎫", layout="centered")
 st.title("🎫 Support Tickets for Blink Digitally")
 st.write(
