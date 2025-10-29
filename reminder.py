@@ -73,7 +73,7 @@ def fetch_tickets_from_notion():
         name_list_assigned = df["Assigned To"].unique().tolist()
         name_list_created = df["Created By"].unique().tolist()
         combined = list(set(name_list_assigned + name_list_created))
-        print(combined)
+
         return combined
     except Exception as e:
         print(e)

@@ -150,14 +150,14 @@ def send_ticket_notifications(ticket_id, issue, priority, status,date, time,  us
         if user_details['receiver_id']:
             assigned_message = f"""🎫 *New Ticket Assigned to You*
 
-*Ticket ID:* {ticket_id}
-*Priority:* {priority}
-*Status:* {status}
-*Created Date (PKST):* {date}
-*Created Time (PKST):* {time}
-*Created By:* {creator_name}
+*🆔 Ticket ID:* {ticket_id}
+*⏰ Priority:* {priority}
+*📊 Status:* {status}
+*📅 Created Date (PKST):* {date}
+*⌛ Created Time (PKST):* {time}
+*➕ Created By:* {creator_name}
 
-*Issue:*
+*❓ Issue:*
 {issue}
 
 Please review and update the ticket status accordingly."""
@@ -170,14 +170,14 @@ Please review and update the ticket status accordingly."""
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
             creator_message = f"""✅ *Ticket Created Successfully*
 
-*Ticket ID:* {ticket_id}
-*Priority:* {priority}
-*Status:* {status}
-*Created Date (PKST):* {date}
-*Created Time (PKST):* {time}
-*Assigned To:* {assigned_name}
+*🆔 Ticket ID:* {ticket_id}
+*⏰ Priority:* {priority}
+*📊 Status:* {status}
+*📅 Created Date (PKST):* {date}
+*⌛ Created Time (PKST):* {time}
+*📕 Assigned To:* {assigned_name}
 
-*Issue:*
+*❓ Issue:*
 {issue}
 
 Your ticket has been submitted and assigned. You'll be notified of any updates."""
@@ -290,13 +290,13 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
         if user_details['receiver_id']:
             assigned_message = f"""🔔 *Ticket Updated*
 
-*Ticket ID:* {ticket_id}
-*Created By:* {creator_name}
+*🆔 Ticket ID:* {ticket_id}
+*➕ Created By:* {creator_name}
 
-*Changes:*
+*✏ Changes:*
 {changes_text}
 
-*Issue:*
+*❓ Issue:*
 {issue}"""
 
             send_dm(user_details['receiver_id'], assigned_message)
@@ -305,13 +305,13 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
             creator_message = f"""🔔 *Your Ticket Was Updated*
 
-*Ticket ID:* {ticket_id}
-*Assigned To:* {assigned_name}
+*🆔 Ticket ID:* {ticket_id}
+*📕 Assigned To:* {assigned_name}
 
-*Changes:*
+*✏ Changes:*
 {changes_text}
 
-*Issue:*
+*❓ Issue:*
 {issue}"""
 
             send_dm(user_details['sender_id'], creator_message)
@@ -407,7 +407,7 @@ with col1:
         today = st.date_input("Date (PKST)", now_pkt.date())
         priority = st.selectbox("Priority", ["High", "Medium", "Low"])
         name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
-        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""))
+        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""), index=st.secrets.get("NAMES", "").index("Huzaifa Sabah Uddin"))
         submitted = st.form_submit_button("Submit")
 
     if submitted:
@@ -485,8 +485,10 @@ with col2:
 
 
             st.text_input("Current Issue", value=ticket_data["Issue"], disabled=True)
-            st.text("Current Status: " + ticket_data["Status"])
-            st.text("Current Priority: " + ticket_data["Priority"])
+            st.text("📊 Current Status: " + ticket_data["Status"])
+            st.text("🕰 Current Priority: " + ticket_data["Priority"])
+            st.text("➕ Created By: " + ticket_data["Created By"])
+            st.text("📕 Assigned To: " + ticket_data["Assigned To"])
 
 
             with st.form("update_ticket_form"):
