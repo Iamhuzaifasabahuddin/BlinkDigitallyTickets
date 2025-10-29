@@ -485,10 +485,10 @@ with col2:
 
 
             st.text_input("Current Issue", value=ticket_data["Issue"], disabled=True)
-            st.text("📊 Current Status: " + ticket_data["Status"])
-            st.text("🕰 Current Priority: " + ticket_data["Priority"])
-            st.text("➕ Created By: " + ticket_data["Created By"])
-            st.text("📕 Assigned To: " + ticket_data["Assigned To"])
+            st.text("📊 *Current Status:* " + ticket_data["Status"])
+            st.text("⏰ *Current Priority:* " + ticket_data["Priority"])
+            st.text("➕ *Created By:* " + ticket_data["Created By"])
+            st.text("📕 *Assigned To:* " + ticket_data["Assigned To"])
 
 
             with st.form("update_ticket_form"):

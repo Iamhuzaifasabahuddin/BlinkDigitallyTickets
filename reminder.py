@@ -68,7 +68,7 @@ def fetch_tickets_from_notion():
             if "Resolved Date" in df.columns:
                 df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], format="%Y-%m-%d", errors='coerce')
 
-        df = df[df["Status"] == "Open"]
+        df = df[df["Status"].isin(["Open", "In Progress"])]
 
         name_list_assigned = df["Assigned To"].unique().tolist()
         name_list_created = df["Created By"].unique().tolist()
@@ -112,7 +112,8 @@ if __name__ == '__main__':
         "Youha": "youha.khan@topsoftdigitals.pk",
         "Emaan Zaidi": "emaan.zaidi@topsoftdigitals.pk",
         "Elishba": "elishba@topsoftdigitals.pk",
-        "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk"
+        "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk",
+        "Farman Ali": "farmanali@topsoftdigitals.pk"
     }
     name_list = fetch_tickets_from_notion()
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
