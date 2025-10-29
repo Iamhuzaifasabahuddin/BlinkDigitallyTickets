@@ -395,71 +395,146 @@ if st.button("🔄 Fetch Latest"):
         st.session_state.df = fetch_tickets_from_notion()
         st.session_state.original_df = st.session_state.df.copy()
 
-st.header("Add a ticket")
+col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
 
-pkt = pytz.timezone("Asia/Karachi")
-now_pkt = datetime.datetime.now(pkt)
-with st.form("add_ticket_form"):
-    issue = st.text_area("Describe the issue")
-    today = st.date_input("Date (PKST)", now_pkt.date())
-    priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-    name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
-    assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""))
-    submitted = st.form_submit_button("Submit")
+with col1:
+    st.header("➕ Add a New Ticket")
+    pkt = pytz.timezone("Asia/Karachi")
+    now_pkt = datetime.datetime.now(pkt)
 
-if submitted:
-    if not issue.strip():
-        st.error("⚠️ Please describe the issue before submitting.")
-    elif not name or not assigned:
-        st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
-    else:
-        try:
-            with st.spinner("Fetching latest ticket from Notion..."):
-                try:
-                    results = notion.data_sources.query(
-                        data_source_id=DATASOURCE_ID,
-                        page_size=1,
-                        sorts=[{"timestamp": "created_time", "direction": "descending"}]
-                    )
+    with st.form("add_ticket_form"):
+        issue = st.text_area("Describe the issue")
+        today = st.date_input("Date (PKST)", now_pkt.date())
+        priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+        name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
+        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""))
+        submitted = st.form_submit_button("Submit")
 
-                    if results.get("results"):
-                        latest_page = results["results"][0]
-                        latest_id_prop = latest_page["properties"]["ID"]["title"]
-                        latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
+    if submitted:
+        if not issue.strip():
+            st.error("⚠️ Please describe the issue before submitting.")
+        elif not name or not assigned:
+            st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
+        else:
+            try:
+                with st.spinner("Fetching latest ticket from Notion..."):
+                    try:
+                        results = notion.data_sources.query(
+                            data_source_id=DATASOURCE_ID,
+                            page_size=1,
+                            sorts=[{"timestamp": "created_time", "direction": "descending"}]
+                        )
 
-                        if "-" in latest_id:
-                            recent_ticket_number = int(latest_id.split("-")[1])
+                        if results.get("results"):
+                            latest_page = results["results"][0]
+                            latest_id_prop = latest_page["properties"]["ID"]["title"]
+                            latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
+
+                            if "-" in latest_id:
+                                recent_ticket_number = int(latest_id.split("-")[1])
+                            else:
+                                recent_ticket_number = 0
                         else:
                             recent_ticket_number = 0
-                    else:
+
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
                         recent_ticket_number = 0
 
-                except Exception as e:
-                    st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
-                    recent_ticket_number = 0
+                new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
 
-            new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+                with st.spinner("Creating ticket in Notion..."):
+                    try:
+                        success = create_ticket_in_notion(
+                            new_ticket_id, issue, "Open", priority, today, name, assigned
+                        )
 
-            with st.spinner("Creating ticket in Notion..."):
-                try:
-                    success = create_ticket_in_notion(
-                        new_ticket_id, issue, "Open", priority, today, name, assigned
-                    )
+                        if success:
+                            st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
+                            st.session_state.df = fetch_tickets_from_notion()
+                            st.session_state.original_df = st.session_state.df.copy()
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to create the ticket in Notion. Please try again later.")
 
-                    if success:
-                        st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
-                        st.session_state.df = fetch_tickets_from_notion()
-                        st.session_state.original_df = st.session_state.df.copy()
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to create the ticket in Notion. Please try again later.")
+                    except Exception as e:
+                        st.error(f"🚨 Error while creating ticket in Notion: {e}")
+            except Exception as e:
+                st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
-                except Exception as e:
-                    st.error(f"🚨 Error while creating ticket in Notion: {e}")
-        except Exception as e:
-            st.error(f"🚨 Error while creating ticket in Notion: {e}")
+with col2:
+    st.header("✏️ Update an Existing Ticket")
+
+    if "df" not in st.session_state:
+        st.session_state.df = fetch_tickets_from_notion()
+        st.session_state.original_df = st.session_state.df.copy()
+
+    temp_df = st.session_state.df.copy()
+    active_tickets = temp_df[temp_df["Status"].isin(["Open", "In Progress"])]
+
+    if active_tickets.empty:
+        st.info("No active tickets available to update.")
+    else:
+        ticket_options = active_tickets["ID"].tolist()
 
 
+        selected_ticket = st.selectbox("Select Ticket to Update", ticket_options)
+
+        if selected_ticket:
+            ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
+
+
+            st.text_input("Current Issue", value=ticket_data["Issue"], disabled=True)
+            st.text("Current Status: " + ticket_data["Status"])
+            st.text("Current Priority: " + ticket_data["Priority"])
+
+
+            with st.form("update_ticket_form"):
+                new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
+                                          index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
+                new_priority = st.selectbox("Update Priority", ["High", "Medium", "Low"],
+                                            index=["High", "Medium", "Low"].index(ticket_data["Priority"]))
+
+                resolved_date = None
+                if new_status == "Closed":
+                    resolved_date = st.date_input("Resolved Date (PKST)", now_pkt.date())
+
+                comments = st.text_area("Comments")
+
+                update_submitted = st.form_submit_button("Update Ticket")
+
+                if update_submitted and (new_status != ticket_data["Status"] or new_priority != ticket_data[
+                    "Priority"] or comments.strip() != ""):
+                    with st.spinner("Updating ticket in Notion..."):
+                        try:
+                            page_id = ticket_data["page_id"]
+                            success = update_ticket_in_notion(
+                                page_id=page_id,
+                                issue=ticket_data["Issue"],
+                                status=new_status,
+                                priority=new_priority,
+                                resolved_date=resolved_date,
+                                comments=comments,
+                                old_status=ticket_data["Status"],
+                                old_priority=ticket_data["Priority"],
+                                ticket_id=ticket_data["ID"],
+                                creator_name=ticket_data.get("Created By", "Unknown"),
+                                assigned_name=ticket_data.get("Assigned To", "Unknown"),
+                            )
+
+                            if success:
+                                st.success(f"✅ Ticket **{selected_ticket}** updated successfully!")
+                                st.session_state.df = fetch_tickets_from_notion()
+                                st.session_state.original_df = st.session_state.df.copy()
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to update the ticket.")
+                        except Exception as e:
+                            st.error(f"🚨 Error updating ticket: {e}")
+                else:
+                    st.warning(" ‼ No New Changes Detected for this ticket.")
+
+st.divider()
 
 if "df" not in st.session_state:
     st.session_state.df = fetch_tickets_from_notion()
