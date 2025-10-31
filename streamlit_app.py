@@ -548,7 +548,7 @@ unique_months = sorted(df["Month"].unique().tolist())
 months = ["All"] + unique_months
 
 current_month = datetime.datetime.now(pkt).strftime("%B")
-default_index = months.index(current_month) if current_month in months else 0
+default_index = months.index("All") if current_month in months else 0
 
 selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
 if selected_month == "All":
