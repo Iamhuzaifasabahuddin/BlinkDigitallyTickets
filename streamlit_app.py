@@ -483,11 +483,15 @@ with col2:
         if selected_ticket:
             ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
 
-            st.markdown("📊 **Current Status:** " + ticket_data["Status"])
-            st.markdown("⏰ **Current Priority:** " + ticket_data["Priority"])
-            st.markdown("➕ **Created By:** " + ticket_data["Created By"])
-            st.markdown("📕 **Assigned To:** " + ticket_data["Assigned To"])
-
+            st.markdown(f"<h3>📄 <b>Issue:</b> {ticket_data['Issue']}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:20px;'>📊 <b>Current Status:</b> {ticket_data['Status']}</p>",
+                        unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:20px;'>⏰ <b>Current Priority:</b> {ticket_data['Priority']}</p>",
+                        unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:20px;'>➕ <b>Created By:</b> {ticket_data['Created By']}</p>",
+                        unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:20px;'>📕 <b>Assigned To:</b> {ticket_data['Assigned To']}</p>",
+                        unsafe_allow_html=True)
 
             with st.form("update_ticket_form"):
                 new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
