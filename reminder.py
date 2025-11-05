@@ -113,6 +113,7 @@ if __name__ == '__main__':
         "Emaan Zaidi": "emaan.zaidi@topsoftdigitals.pk",
         "Elishba": "elishba@topsoftdigitals.pk",
         "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk",
+        "Hassan Siddiqui": "hassan.siddiqui@topsoftdigitals.pk",
         "Farman Ali": "farmanali@topsoftdigitals.pk"
     }
     name_list = fetch_tickets_from_notion()
