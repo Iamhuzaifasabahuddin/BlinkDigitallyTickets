@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from notion_client import Client
@@ -22,11 +23,11 @@ def fetch_tickets_from_notion():
                 results = notion.data_sources.query(
                     data_source_id=DATABASE_ID,
                     start_cursor=start_cursor,
-                    sorts=[{"timestamp": "created_time", "direction": "ascending"}]
+                    sorts=[{"timestamp": "created_time", "direction": "descending"}]
                 )
             else:
                 results = notion.data_sources.query(data_source_id=DATABASE_ID,
-                                                 sorts=[{"timestamp": "created_time", "direction": "ascending"}])
+                                                 sorts=[{"timestamp": "created_time", "direction": "descending"}])
 
             for page in results["results"]:
                 props = page["properties"]
@@ -74,7 +75,14 @@ def fetch_tickets_from_notion():
         name_list_created = df["Created By"].unique().tolist()
         combined = list(set(name_list_assigned + name_list_created))
 
-        return combined
+        ticket_list = defaultdict(list)
+
+        for name in combined:
+            tickets = df[(df["Created By"] == name) | (df["Assigned To"] == name)]
+
+            ticket_list[name].extend(tickets["ID"].tolist())
+
+        return combined, ticket_list
     except Exception as e:
         print(e)
         return pd.DataFrame()
@@ -116,7 +124,7 @@ if __name__ == '__main__':
         "Hassan Siddiqui": "hassan.siddiqui@topsoftdigitals.pk",
         "Farman Ali": "farmanali@topsoftdigitals.pk"
     }
-    name_list = fetch_tickets_from_notion()
+    name_list, ticket_dict = fetch_tickets_from_notion()
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
     for name in name_list:
