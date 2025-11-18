@@ -76,13 +76,22 @@ def fetch_tickets_from_notion():
         combined = list(set(name_list_assigned + name_list_created))
 
         ticket_list = defaultdict(list)
-
+        printed_list = defaultdict(list)
         for name in combined:
             tickets = df[(df["Created By"] == name) | (df["Assigned To"] == name)]
+            printed = tickets.copy()
+            tickets = tickets[-tickets["Issue"].str.contains("Printed", case=False, na=False)]
 
-            ticket_list[name].extend(tickets["ID"].tolist())
+            tickets = tickets[~tickets["Issue"].str.contains("Printed", case=False, na=False)]
 
-        return combined, ticket_list
+            ticket_list[name].append(tickets["ID"].tolist())
+            ticket_list[name].append(tickets["Issue"].astype(str).tolist())
+
+            printed = printed[printed["Issue"].str.contains("Printed", case=False, na=False)]
+            printed_list[name].append(printed["ID"].tolist())
+            printed_list[name].append(printed["Issue"].astype(str).tolist())
+
+        return combined, ticket_list, printed_list
     except Exception as e:
         print(e)
         return pd.DataFrame()
@@ -107,11 +116,13 @@ def send_dm(user_id, message):
 
 
 if __name__ == '__main__':
+    import pprint
+
     names = {
         "Aiza Ali": "aiza.ali@topsoftdigitals.pk",
         "Ahmed Asif": "ahmed.asif@topsoftdigitals.pk",
         "Asad Waqas": "asad.waqas@topsoftdigitals.pk",
-        "Kamal Muhammad Issa" : "kamal.muhammed.issa@topsoftdigitals.pk",
+        "Kamal Muhammad Issa": "kamal.muhammed.issa@topsoftdigitals.pk",
         "Maheen Sami": "maheen.sami@topsoftdigitals.pk",
         "Mubashir Khan": "Mubashir.khan@topsoftdigitals.pk",
         "Muhammad Ali": "muhammad.ali@topsoftdigitals.pk",
@@ -125,21 +136,30 @@ if __name__ == '__main__':
         "Hassan Siddiqui": "hassan.siddiqui@topsoftdigitals.pk",
         "Farman Ali": "farmanali@topsoftdigitals.pk"
     }
-    name_list, ticket_dict = fetch_tickets_from_notion()
+
+    name_list, ticket_dict, printed_dict = fetch_tickets_from_notion()
     name_list = [name for name in name_list if name != "Huzaifa Sabah Uddin"]
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
+
     for name in name_list:
+        if name not in ticket_dict:
+            continue
+
+        tickets, issues = ticket_dict[name]
+        tickets_2, printings = printed_dict[name]
         id_ = get_user_id_by_email(names.get(name))
+
+
+        ticket_lines = "\n".join([f"{t}: {i}" for t, i in zip(tickets, issues)])
+        # printed_lines = "\n".join([f"{t}: {i}" for t, i in zip(tickets_2, printings)])
         message = (
-            f"🔔 *Reminder for:* *<@{id_}>* \n"
-            f"‼ Please check your open tickets @ https://blinkdigitallytickets.streamlit.app/ and provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
+            f"🔔 *Reminder for:* *<@{id_}>*\n"
+            f"Here are your open tickets:\n"
+            f"{ticket_lines}\n\n"
+            f"‼ Please provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
         )
-        send_dm(
-            id_,
-            message
-        )
-        send_dm(
-            hexz_id,
-        f"🚀 Notification sent to *<@{id_}>*!")
-    send_dm(hexz_id,
-            "🔔 Reminder: Check your open tickets!")
+
+        send_dm(id_, message)
+        send_dm(hexz_id, f"🚀 Notification sent to *<@{id_}>*!")
+
+    send_dm(hexz_id, "🔔 Reminder: Check your open tickets!")
