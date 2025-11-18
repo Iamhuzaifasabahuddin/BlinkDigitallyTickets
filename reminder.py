@@ -87,7 +87,7 @@ def fetch_tickets_from_notion():
             ticket_list[name].append(tickets["ID"].tolist())
             ticket_list[name].append(tickets["Issue"].astype(str).tolist())
 
-            printed = printed[printed["Issue"].str.contains("Printed", case=False, na=False)]
+            printed = printed[printed["Issue"].str.contains("Printed|Complimentary|Proof", case=False, na=False)]
             printed_list[name].append(printed["ID"].tolist())
             printed_list[name].append(printed["Issue"].astype(str).tolist())
 
