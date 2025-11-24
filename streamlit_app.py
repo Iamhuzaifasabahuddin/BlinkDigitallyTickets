@@ -649,9 +649,9 @@ st.divider()
 st.header("📦 Closed Tickets")
 
 if selected_month == "All":
-    st.write(f"Number of active tickets: `{len(closed_df)}`")
+    st.write(f"Number of closed tickets: `{len(closed_df)}`")
 else:
-    st.write(f"Number of active tickets this month: `{len(closed_df)}`")
+    st.write(f"Number of closed tickets this month: `{len(closed_df)}`")
 
 if closed_df.empty:
     st.info("No closed tickets for the selected month.")
