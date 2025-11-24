@@ -571,7 +571,13 @@ active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].cop
 closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
 
 st.header("🟢 Active Tickets")
-st.write(f"Number of active tickets this month: `{len(active_df)}`")
+
+if selected_month == "All":
+    st.write(f"Number of active tickets: `{len(active_df)}`")
+else:
+    st.write(f"Number of active tickets this month: `{len(active_df)}`")
+
+
 
 if st.session_state.authenticated:
     st.info(
@@ -641,7 +647,11 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
 
 st.divider()
 st.header("📦 Closed Tickets")
-st.write(f"Number of closed tickets this month: `{len(closed_df)}`")
+
+if selected_month == "All":
+    st.write(f"Number of active tickets: `{len(closed_df)}`")
+else:
+    st.write(f"Number of active tickets this month: `{len(closed_df)}`")
 
 if closed_df.empty:
     st.info("No closed tickets for the selected month.")
