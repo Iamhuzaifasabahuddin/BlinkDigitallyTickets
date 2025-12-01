@@ -476,8 +476,6 @@ with col2:
         st.info("No active tickets available to update.")
     else:
         ticket_options = active_tickets["ID"].tolist()
-
-
         selected_ticket = st.selectbox("Select Ticket to Update", ticket_options)
 
         if selected_ticket:
@@ -493,10 +491,13 @@ with col2:
             st.markdown(f"<p style='font-size:20px;'>📕 <b>Assigned To:</b> {ticket_data['Assigned To']}</p>",
                         unsafe_allow_html=True)
 
-            with st.form("update_ticket_form"):
-                new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
+        with st.form("update_ticket_form"):
+                new_status = st.selectbox("Update Status",
+                                          ["Open", "In Progress", "Closed"],
                                           index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
-                new_priority = st.selectbox("Update Priority", ["High", "Medium", "Low"],
+
+                new_priority = st.selectbox("Update Priority",
+                                            ["High", "Medium", "Low"],
                                             index=["High", "Medium", "Low"].index(ticket_data["Priority"]))
 
                 resolved_date = None
@@ -507,8 +508,16 @@ with col2:
 
                 update_submitted = st.form_submit_button("Update Ticket")
 
-                if update_submitted and (new_status != ticket_data["Status"] or new_priority != ticket_data[
-                    "Priority"] or comments.strip() != ""):
+                has_changes = (
+                        new_status != ticket_data["Status"] or
+                        new_priority != ticket_data["Priority"] or
+                        comments.strip() != ""
+                )
+
+                if update_submitted and not has_changes:
+                    st.warning("⚠️ No changes detected for this ticket.")
+
+                if update_submitted and has_changes:
                     with st.spinner("Updating ticket in Notion..."):
                         try:
                             page_id = ticket_data["page_id"]
@@ -535,9 +544,6 @@ with col2:
                                 st.error("❌ Failed to update the ticket.")
                         except Exception as e:
                             st.error(f"🚨 Error updating ticket: {e}")
-                else:
-                    st.warning(" ‼ No New Changes Detected for this ticket.")
-
 st.divider()
 
 if "df" not in st.session_state:
