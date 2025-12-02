@@ -242,7 +242,7 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
         formatted_time = now_pkt.time().strftime("%I:%M %p")
         formatted_date = date_submitted.strftime("%d-%B-%Y")
         notion.pages.create(
-            parent={"database_id": DATABASE_ID},
+            parent={"data_source_id": DATASOURCE_ID},
             properties={
                 "ID": {"title": [{"text": {"content": ticket_id}}]},
                 "Issue": {"rich_text": [{"text": {"content": issue}}]},
