@@ -147,6 +147,7 @@ if __name__ == '__main__':
         "Elishba": "elishba@topsoftdigitals.pk",
         "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk",
         "Hassan Siddiqui": "hassan.siddiqui@topsoftdigitals.pk",
+        "Tooba Shoaib": "tooba.shoaib@topsoftdigitals.pk",
         "Huzaifa Sabah Uddin": "huzaifa.sabah@topsoftdigitals.pk",
         "Farman Ali": "farmanali@topsoftdigitals.pk"
     }
