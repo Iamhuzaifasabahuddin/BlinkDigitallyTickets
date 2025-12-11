@@ -124,6 +124,8 @@ def fetch_tickets_from_notion():
                     "Resolved Time": props["Resolved Time"]["rich_text"][0]["text"] ["content"] if props["Resolved Time"]["rich_text"] else "",
                     "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
                         "rich_text"] else "",
+                    "Ticket Type": props["Ticket Type"]["rich_text"][0]["text"]["content"] if props["Ticket Type"][
+                        "rich_text"] else ""
                 }
                 tickets.append(ticket)
 
@@ -231,7 +233,7 @@ def get_user_details(name, assigned):
 def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name, assigned):
     """Create a new ticket in Notion database."""
     try:
-        # Convert date object to string if necessary
+
         if isinstance(date_submitted, (datetime.date, datetime.datetime)):
             date_submitted_str = date_submitted.strftime("%Y-%m-%d")
         else:
@@ -241,6 +243,12 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
         now_pkt = datetime.datetime.now(pkt)
         formatted_time = now_pkt.time().strftime("%I:%M %p")
         formatted_date = date_submitted.strftime("%d-%B-%Y")
+        ticket_type = None
+        if name == assigned:
+            ticket_type = "Personal"
+        else:
+            ticket_type = "Normal"
+
         notion.pages.create(
             parent={"data_source_id": DATASOURCE_ID},
             properties={
@@ -252,6 +260,7 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
                 "Assigned To": {"select": {"name": assigned}},
                 "Date Submitted": {"date": {"start": date_submitted_str}},
                 "Submitted Time": {"rich_text": [{"text": {"content": formatted_time}}]},
+                "Ticket Type": {"rich_text": [{"text": {"content": ticket_type}}]},
             }
         )
 
@@ -567,14 +576,17 @@ else:
     filtered_df = df[df["Month"] == selected_month].copy()
 
 st.subheader(f"📊 Showing tickets for: **{selected_month}**")
-st.write(f"Total tickets found: `{len(filtered_df)}`")
+st.write(f"Total Normal Tickets Found: `{len(filtered_df[filtered_df["Ticket Type"] == "Normal"])}`")
+st.write(f"Total Personal Tickets Found: `{len(filtered_df[filtered_df["Ticket Type"] == "Personal"])}`")
 
 if filtered_df.empty:
     st.info("No tickets found for the selected month.")
     st.stop()
 
 active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
+active_df = active_df[active_df["Ticket Type"] == "Normal"]
 closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
+closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
 
 st.header("🟢 Active Tickets")
 
@@ -596,7 +608,7 @@ else:
 
 display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -665,7 +677,7 @@ else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
