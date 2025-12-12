@@ -143,7 +143,7 @@ def fetch_tickets_from_notion():
         return df
     except Exception as e:
         st.error(f"Error fetching tickets from Notion: {e}")
-        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments"])
+        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments", "Ticket Type"])
 
 
 def send_ticket_notifications(ticket_id, issue, priority, status,date, time,  user_details, creator_name, assigned_name):
@@ -576,26 +576,40 @@ else:
     filtered_df = df[df["Month"] == selected_month].copy()
 
 st.subheader(f"📊 Showing tickets for: **{selected_month}**")
-st.write(f"Total Normal Tickets Found: `{len(filtered_df[filtered_df["Ticket Type"] == "Normal"])}`")
-st.write(f"Total Personal Tickets Found: `{len(filtered_df[filtered_df["Ticket Type"] == "Personal"])}`")
+
+normal_count = len(filtered_df[filtered_df["Ticket Type"] == "Normal"])
+personal_count = len(filtered_df[filtered_df["Ticket Type"] == "Personal"])
+
+st.metric(label="Total Normal Tickets Found", value=normal_count)
+st.metric(label="Total Personal Tickets Found", value=personal_count)
 
 if filtered_df.empty:
     st.info("No tickets found for the selected month.")
     st.stop()
 
 active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
+personal_active = active_df[active_df["Ticket Type"] == "Personal"]
+
 active_df = active_df[active_df["Ticket Type"] == "Normal"]
 closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
+personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
 closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
 
 st.header("🟢 Active Tickets")
 
 if selected_month == "All":
-    st.write(f"Number of active tickets: `{len(active_df)}`")
+    st.metric(
+        label="Number of active tickets",
+        value=f"{len(active_df):,}"
+    )
 else:
-    st.write(f"Number of active tickets this month: `{len(active_df)}`")
+    st.metric(
+        label=f"Number of active tickets this month ({selected_month})",
+        value=f"{len(active_df):,}"
+    )
 
 
+st.metric(label="Number of active personal tickets", value=len(personal_active))
 
 if st.session_state.authenticated:
     st.info(
@@ -614,7 +628,7 @@ if not st.session_state.authenticated:
 
 edited_active_df = st.data_editor(
     display_active_df,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     key="active_editor",
     column_config={
@@ -667,10 +681,17 @@ st.divider()
 st.header("📦 Closed Tickets")
 
 if selected_month == "All":
-    st.write(f"Number of closed tickets: `{len(closed_df)}`")
+    st.metric(
+        label="Number of closed tickets",
+        value=f"{len(closed_df):,}"
+    )
 else:
-    st.write(f"Number of closed tickets this month: `{len(closed_df)}`")
+    st.metric(
+        label=f"Number of closed tickets this month ({selected_month})",
+        value=f"{len(closed_df):,}"
+    )
 
+st.metric(label="Number of closed personal tickets", value=len(personal_closed))
 if closed_df.empty:
     st.info("No closed tickets for the selected month.")
 else:
@@ -683,7 +704,7 @@ else:
 
         edited_closed_df = st.data_editor(
             display_closed_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             key="closed_editor",
             column_config={
