@@ -134,6 +134,8 @@ if __name__ == '__main__':
         "Aiza Ali": "aiza.ali@topsoftdigitals.pk",
         "Ahmed Asif": "ahmed.asif@topsoftdigitals.pk",
         "Asad Waqas": "asad.waqas@topsoftdigitals.pk",
+        "Adrian Moses" : "adrain.moses@topsoftdigitals.pk",
+        "Ancil Fernandes" : "ancil.fernandes@topsoftdigitals.pk",
         "Kamal Muhammad Issa": "kamal.muhammed.issa@topsoftdigitals.pk",
         "Muhammad Saad Sethi": "saad.sethi@topsoftdigitals.pk",
         "Maheen Sami": "maheen.sami@topsoftdigitals.pk",
