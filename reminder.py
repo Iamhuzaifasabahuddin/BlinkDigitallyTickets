@@ -135,7 +135,7 @@ if __name__ == '__main__':
     names = json.loads(names)
 
     name_list, ticket_dict, printed_dict, personal_dict = fetch_tickets_from_notion()
-    hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
+    hexz_id = get_user_id_by_email(os.getenv("ADMIN_EMAIL"))
 
     for name in name_list:
         tickets_exists: bool = False
@@ -177,7 +177,7 @@ if __name__ == '__main__':
                 f"Here are your personal tickets reminders:\n"
                 f"{personal_lines}\n\n"
             )
-            send_dm(hexz_id, message)
+            send_dm(id_, message)
 
     tickets_2, printings = printed_dict.get("Huzaifa Sabah Uddin", ([], []))
     if tickets_2:
