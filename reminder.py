@@ -1,3 +1,4 @@
+import json
 import os
 from collections import defaultdict
 
@@ -130,29 +131,8 @@ def send_dm(user_id, message):
 
 if __name__ == '__main__':
 
-    names = {
-        "Aiza Ali": "aiza.ali@topsoftdigitals.pk",
-        "Ahmed Asif": "ahmed.asif@topsoftdigitals.pk",
-        "Asad Waqas": "asad.waqas@topsoftdigitals.pk",
-        "Adrian Moses" : "adrain.moses@topsoftdigitals.pk",
-        "Ancil Fernandes" : "ancil.fernandes@topsoftdigitals.pk",
-        "Kamal Muhammad Issa": "kamal.muhammed.issa@topsoftdigitals.pk",
-        "Muhammad Saad Sethi": "saad.sethi@topsoftdigitals.pk",
-        "Maheen Sami": "maheen.sami@topsoftdigitals.pk",
-        "Mubashir Khan": "Mubashir.khan@topsoftdigitals.pk",
-        "Muhammad Ali": "muhammad.ali@topsoftdigitals.pk",
-        "Valencia Angelo": "valencia.angelo@topsoftdigitals.pk",
-        "Ukasha Asadullah": "ukasha.asadullah@topsoftdigitals.pk",
-        "Ahsan Javed": "ahsan.javed@topsoftdigitals.pk",
-        "Youha": "youha.khan@topsoftdigitals.pk",
-        "Emaan Zaidi": "emaan.zaidi@topsoftdigitals.pk",
-        "Elishba": "elishba@topsoftdigitals.pk",
-        "Shahrukh Yousuf": "shahrukh.yousuf@topsoftdigitals.pk",
-        "Hassan Siddiqui": "hassan.siddiqui@topsoftdigitals.pk",
-        "Tooba Shoaib": "tooba.shoaib@topsoftdigitals.pk",
-        "Huzaifa Sabah Uddin": "huzaifa.sabah@topsoftdigitals.pk",
-        "Farman Ali": "farmanali@topsoftdigitals.pk"
-    }
+    names = os.getenv("NAMES")
+    names = json.loads(names)
 
     name_list, ticket_dict, printed_dict, personal_dict = fetch_tickets_from_notion()
     hexz_id = get_user_id_by_email("huzaifa.sabah@topsoftdigitals.pk")
@@ -186,7 +166,7 @@ if __name__ == '__main__':
                 f"{ticket_lines}\n\n"
                 f"‼ Please provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
             )
-            send_dm(id_, message)
+            send_dm(hexz_id, message)
 
         if tickets_exists:
             send_dm(hexz_id, f"🚀 Notification sent to *<@{id_}>*!")
@@ -197,7 +177,7 @@ if __name__ == '__main__':
                 f"Here are your personal tickets reminders:\n"
                 f"{personal_lines}\n\n"
             )
-            send_dm(id_, message)
+            send_dm(hexz_id, message)
 
     tickets_2, printings = printed_dict.get("Huzaifa Sabah Uddin", ([], []))
     if tickets_2:
