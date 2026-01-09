@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
     names = os.getenv("NAMES")
     names = json.loads(names)
-
+    print(names)
     name_list, ticket_dict, printed_dict, personal_dict = fetch_tickets_from_notion()
     hexz_id = get_user_id_by_email(os.getenv("ADMIN_EMAIL"))
 
