@@ -30,4 +30,5 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NAMES: ${{ secrets.NAMES }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
         run: python reminder.py
