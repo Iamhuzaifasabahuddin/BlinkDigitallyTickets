@@ -6,7 +6,8 @@ import pandas as pd
 from notion_client import Client
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-
+from dotenv import load_dotenv
+load_dotenv('tokens.env')
 bot = WebClient(token=os.environ['SLACK_BOT_TOKEN'])
 
 notion_token = os.environ['NOTION_TOKEN']
@@ -133,7 +134,6 @@ if __name__ == '__main__':
 
     names = os.getenv("NAMES")
     names = json.loads(names)
-    print(names)
     name_list, ticket_dict, printed_dict, personal_dict = fetch_tickets_from_notion()
     hexz_id = get_user_id_by_email(os.getenv("ADMIN_EMAIL"))
 
@@ -166,7 +166,7 @@ if __name__ == '__main__':
                 f"{ticket_lines}\n\n"
                 f"‼ Please provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
             )
-            send_dm(hexz_id, message)
+            send_dm(id_, message)
 
         if tickets_exists:
             send_dm(hexz_id, f"🚀 Notification sent to *<@{id_}>*!")
