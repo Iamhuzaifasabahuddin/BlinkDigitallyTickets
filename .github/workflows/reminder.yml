@@ -24,7 +24,7 @@ jobs:
           pip install slack-sdk "notion-client==2.6.0" pandas
 
 
-      - name: Send monthly summary
+      - name: Generate Reminders
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
