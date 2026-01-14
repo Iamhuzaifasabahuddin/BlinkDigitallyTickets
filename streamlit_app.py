@@ -261,6 +261,7 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
                 "Date Submitted": {"date": {"start": date_submitted_str}},
                 "Submitted Time": {"rich_text": [{"text": {"content": formatted_time}}]},
                 "Ticket Type": {"rich_text": [{"text": {"content": ticket_type}}]},
+                "Notify": {"rich_text": [{"text": {"content": "Yes"}}]},
             }
         )
 

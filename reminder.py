@@ -60,6 +60,8 @@ def fetch_tickets_from_notion():
                     props["Resolved Time"]["rich_text"] else "",
                     "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
                         "rich_text"] else "",
+                    "Notify": props["Notify"]["rich_text"][0]["text"]["content"] if props["Notify"][
+                        "rich_text"] else "",
                 }
                 tickets.append(ticket)
 
@@ -92,6 +94,7 @@ def fetch_tickets_from_notion():
             printed = tickets.copy()
             tickets = tickets[~tickets["Issue"].str.contains("Printed|Complimentary|Proof",
                                                              case=False, na=False)]
+            tickets = tickets[tickets["Notify"] == "Yes"]
             ticket_list[name].append(tickets["ID"].tolist())
             ticket_list[name].append(tickets["Issue"].astype(str).tolist())
 
