@@ -125,6 +125,8 @@ def fetch_tickets_from_notion():
                     "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
                         "rich_text"] else "",
                     "Ticket Type": props["Ticket Type"]["rich_text"][0]["text"]["content"] if props["Ticket Type"][
+                        "rich_text"] else "",
+                    "Notify": props["Notify"]["rich_text"][0]["text"]["content"] if props["Notify"][
                         "rich_text"] else ""
                 }
                 tickets.append(ticket)
@@ -623,7 +625,7 @@ else:
 
 display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type", "Notify"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -699,7 +701,7 @@ else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type", "Notify"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
