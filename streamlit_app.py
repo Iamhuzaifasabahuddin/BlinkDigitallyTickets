@@ -620,12 +620,10 @@ if st.session_state.authenticated:
         "to sync your edits. You can also sort columns by clicking headers.",
         icon="✍️",
     )
-else:
-    st.warning("🔒 Login with admin password to edit tickets", icon="⚠️")
 
 display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type", "Notify"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -701,7 +699,7 @@ else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type", "Notify"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
