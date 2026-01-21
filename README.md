@@ -1,189 +1,242 @@
-<!-- Save this file as README.md -->
+# 🎟 BlinkDigitally — Ticket Management & Reminder System
 
-# 🎟️ Ticket Management & Reminder System for BlinkDigitally
+**Version:** v1.0.0
 
-A lightweight yet powerful **ticket creation and management system** built with **Streamlit** and **Python**, integrated with **Notion** for storage and **Slack** for real-time notifications. The system also includes **daily automated reminders** powered by **GitHub Actions**, ensuring no ticket is overlooked.
+## Short description
 
----
+BlinkDigitally Ticket Management & Reminder System is a Streamlit-based internal ticketing tool that uses **Notion as the canonical storage backend** and **Slack for real-time notifications and reminders**. It enables teams to create, assign, track, and resolve tickets through a simple UI, while automated Slack notifications and scheduled daily reminders ensure accountability and follow-through. A GitHub Actions workflow powers unattended reminder delivery.
 
-## 🚀 Key Features
+**Repository & reference**
 
-### 📝 Ticket Management (Streamlit App)
-
-* Create, update, assign, and track tickets in real time
-* Define ticket **status**, **priority**, **assignee**, and **creator**
-* Automatic timestamping for submission and resolution
-* Centralized ticket storage using **Notion Database**
-
-### 🔔 Slack Notifications (Real-Time)
-
-* Instant Slack notifications when:
-
-  * A ticket is **created**
-  * A ticket is **updated**
-  * A ticket is **assigned or reassigned**
-  * A ticket is **resolved**
-* Both **ticket creator** and **assignee** are notified
-* Admin receives visibility on all important updates
-
-### ⏰ Daily Automated Reminders
-
-* Daily scheduled reminders via **GitHub Actions**
-* Reminds users of:
-
-  * Open tickets
-  * In-progress tickets
-  * Personal tickets (created & assigned to the same user)
-  * Pending print/production tickets (if applicable)
-* Messages are delivered directly to Slack DMs
+* Repo: [https://github.com/Iamhuzaifasabahuddin/BlinkDigitallyTickets](https://github.com/Iamhuzaifasabahuddin/BlinkDigitallyTickets)
+* Primary app file: `app.py`
 
 ---
 
-## 🧩 Tech Stack
+## Table of contents
 
-| Component     | Technology                    |
-| ------------- | ----------------------------- |
-| Frontend      | Streamlit                     |
-| Backend       | Python 3.11+                  |
-| Database      | Notion API                    |
-| Notifications | Slack API                     |
-| Scheduling    | GitHub Actions                |
-| Deployment    | Streamlit Cloud / Self-hosted |
-
----
-
-## 🗂️ Architecture Overview
-
-```
-Streamlit App
-   │
-   ▼
-Notion Database  ←→  Python Backend
-   │                     │
-   ▼                     ▼
-Slack Notifications   GitHub Actions (Daily Reminders)
-```
+* Key Features
+* Architecture Overview
+* Requirements
+* Notion Schema (Recommended)
+* Configuration (Environment Variables & Secrets)
+* Install & Run (Local)
+* GitHub Actions — Daily Reminders
+* Slack Integration Details
+* Development & Testing
+* Roadmap
+* Contributing
+* License
+* Changelog (v1.0.0)
 
 ---
 
-## ⚙️ Environment Variables
+## Key Features
 
-The following environment variables are required:
+* Create, update, assign, and resolve tickets via a Streamlit UI
+* Centralized ticket storage in a Notion database (searchable, auditable, canonical)
+* Real-time Slack notifications on ticket events:
 
-```bash
-NOTION_TOKEN=your_notion_integration_token
-NOTION_DATABASE_ID=your_notion_database_id
-SLACK_BOT_TOKEN=xoxb-xxxxxxxx
-ADMIN_EMAIL=admin@company.com
-NAMES={"User Name": "user@company.com"}
-```
-
-> 💡 **Tip:** Store sensitive values as **GitHub Secrets** when using GitHub Actions.
+  * Ticket created
+  * Ticket updated
+  * Ticket assigned or reassigned
+  * Ticket resolved
+* Automated daily Slack DM reminders for assignees with outstanding tickets
+* GitHub Actions–based scheduler (no always-on server required)
+* Safeguards to skip invalid Slack users and log notification failures
+* Production-ready structure with clean separation of UI, storage, and notifications
 
 ---
 
-## 📦 Installation & Setup
+## Architecture Overview
 
-### 1️⃣ Clone the Repository
+* Front-end UI: Streamlit
+* Storage backend: Notion Database (CRUD operations via Notion API)
+* Notifications: Slack API (DMs and admin notifications)
+* Scheduling: GitHub Actions (cron-based reminder job)
 
-```bash
-git clone https://github.com/your-org/ticket-management-app.git
-cd ticket-management-app
-```
+**Flow:**
+Streamlit UI → Python backend ↔ Notion Database
+        ↘ Slack API (notifications)
+        ↘ GitHub Actions (scheduled reminders)
 
-### 2️⃣ Create Virtual Environment
+---
 
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\\Scripts\\activate
-```
+## Requirements
 
-### 3️⃣ Install Dependencies
+Minimum tested environment:
+
+* Python 3.9+
+* streamlit
+* notion-client
+* slack-sdk
+* requests
+* python-dotenv (optional, for local use)
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4️⃣ Run Streamlit App
+---
+
+## Notion Schema (Recommended)
+
+Create a Notion database with the following properties (names are case-sensitive unless you update the mapping in code):
+
+* **Title** (Title) — Ticket title
+* **Description** (Rich Text) — Full ticket details
+* **Status** (Select) — Open, In Progress, Resolved
+* **Priority** (Select) — Low, Medium, High, Critical
+* **Assigneed To* (Email or People) — Used to map to Slack user
+* **Created By** (Email or People) — Ticket creator
+* **Created** (Created time) — Automatic timestamp
+* **Resolved** (Date) — Resolution date (optional)
+* **Ticket ID** (Number or Formula) — Optional numeric identifier
+
+If property names or types differ, update the backend mapping accordingly.
+
+---
+
+## Configuration (Environment Variables & Secrets)
+
+Set these locally or (recommended) via GitHub Secrets for CI.
+
+**Required:**
+
+* `NOTION_TOKEN` — Notion integration token
+* `NOTION_DATABASE_ID` — Target Notion database ID
+* `SLACK_BOT_TOKEN` — Slack bot token (`xoxb-...`)
+* `ADMIN_EMAIL` — Admin email for oversight notifications
+
+
+**Security note:**
+Never commit secrets to the repository. Use GitHub Secrets for CI and production deployments.
+
+---
+
+## Install & Run (Local)
+
+1. Clone the repository
+
+```bash
+git clone https://github.com/Iamhuzaifasabahuddin/BlinkDigitallyTickets.git
+cd BlinkDigitallyTickets
+```
+
+2. Create and activate a virtual environment
+
+```bash
+python -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
+```
+
+3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Configure environment variables (`.env` or exports)
+
+5. Run the Streamlit app
 
 ```bash
 streamlit run app.py
 ```
 
----
-
-## 🔁 Slack Notification Logic
-
-* **Ticket Created** → Creator + Admin notified
-* **Ticket Assigned** → Assignee + Creator notified
-* **Ticket Updated** → Creator + Assignee notified
-* **Ticket Resolved** → Creator + Admin notified
-* **Daily Reminder** → Assignee receives open tickets summary
-
-All notifications are sent via **Slack DMs** for clarity and focus.
+Open the URL shown in the terminal (typically [http://localhost:8501](http://localhost:8501)).
 
 ---
 
-## ⏱️ GitHub Actions – Daily Reminder
+## GitHub Actions — Daily Reminders
 
-The reminder job runs automatically on a schedule (example below):
+A scheduled workflow runs automatically to:
+
+1. Query Notion for open or in-progress tickets
+2. Group tickets by assignee
+3. Resolve Slack user IDs via email lookup
+4. Send personalized Slack DM reminders
+
+Example cron schedule:
 
 ```yaml
 on:
   schedule:
-    - cron: "0 9 * * 1-5"  # Weekdays at 9 AM
+    - cron: "0 9 * * 1-5"  # Weekdays at 09:00 UTC
 ```
 
-The workflow:
-
-1. Fetches open tickets from Notion
-2. Groups tickets by user
-3. Resolves Slack user IDs
-4. Sends personalized reminders
+Ensure the workflow has access to all required secrets.
 
 ---
 
-## 🛡️ Error Handling & Safeguards
+## Slack Integration Details
 
-* Skips users not found in Slack
-* Prevents sending messages to invalid IDs
-* Gracefully handles missing environment variables
-* Logs skipped or failed notifications for debugging
+* Create a Slack App and install it to your workspace
+* Required OAuth scopes:
 
----
+  * `chat:write`
+  * `users:read.email`
+  * `im:write` (if opening DMs explicitly)
+* Email → Slack user resolution is done via `users.lookupByEmail`
+* Notifications include:
 
-## 📌 Use Cases
-
-* Internal support teams
-* Publishing & production tracking
-* Operations & task management
-* Remote team coordination
-* SLA-driven workflows
+  * Immediate DMs on ticket lifecycle events
+  * Daily reminder summaries per assignee
+* Invalid or missing Slack users are skipped and logged
 
 ---
 
-## 🛣️ Roadmap (Optional Enhancements)
+## Development & Testing
 
-* Slack interactive buttons (Update / Resolve)
+* Use a sandbox Notion database and test Slack workspace
+* Keep secrets isolated via environment variables
+* Logging captures API failures and skipped notifications
+* Suggested local testing:
+
+  1. Create test tickets via Streamlit
+  2. Verify Slack notifications for each event
+  3. Run reminder logic manually for validation
+
+---
+
+## Roadmap
+
+Planned enhancements beyond v1.0.0:
+
+* Interactive Slack buttons (Resolve / Update)
 * Role-based permissions
 * Ticket analytics dashboard
-* File attachments support
-* SLA breach alerts
+* File attachments
+* SLA alerts and escalation workflows
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Pull requests are welcome. Please ensure code quality and test integrations with Slack and Notion before submitting.
+Contributions are welcome:
+
+1. Open an issue describing the change
+2. Fork and create a feature branch
+3. Submit a PR with clear description
+4. Ensure CI passes and secrets are not exposed
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License.
+MIT — see `LICENSE` file.
 
 ---
 
-## ✨ Acknowledgments
+## Changelog — v1.0.0
 
-Built with ❤️ using Streamlit, Notion API, Slack API, and GitHub Actions.
+* Initial production-ready release
+* Streamlit-based ticket CRUD
+* Notion-backed persistent storage
+* Slack notifications for ticket events
+* GitHub Actions–powered daily reminders
+* Basic error handling and logging
+
+---
