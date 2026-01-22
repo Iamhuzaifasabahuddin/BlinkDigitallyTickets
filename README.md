@@ -66,7 +66,7 @@ Streamlit UI → Python backend ↔ Notion Database
 
 Minimum tested environment:
 
-* Python 3.9+
+* Python 3.13+
 * streamlit
 * notion-client
 * slack-sdk
