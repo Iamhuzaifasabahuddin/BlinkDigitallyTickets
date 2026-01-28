@@ -335,7 +335,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 
 def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, comments,
                             old_status=None, old_priority=None, ticket_id=None,
-                            creator_name=None, assigned_name=None):
+                            creator_name=None, assigned_name=None, notify=None):
     """Update an existing ticket in Notion and send notifications."""
     try:
         properties = {
@@ -358,6 +358,8 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
 
         if comments:
             properties["Comments"] = {"rich_text": [{"text": {"content": comments}}]}
+        if notify:
+            properties["Notify"] = {"rich_text": [{"text": {"content": notify}}]}
 
         notion.pages.update(
             page_id=page_id,
@@ -375,7 +377,8 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
                 comments,
                 formatted_resolved_date,
             )
-
+            if notify:
+                st.success(f"{ticket_id} Notification Updated to {notify}")
         return True
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
@@ -502,7 +505,8 @@ with col2:
                         unsafe_allow_html=True)
             st.markdown(f"<p style='font-size:20px;'>📕 <b>Assigned To:</b> {ticket_data['Assigned To']}</p>",
                         unsafe_allow_html=True)
-
+        if st.session_state.authenticated:
+            new_notify = st.selectbox("Update Notify", ["Yes", "No"], index=["Yes", "No"].index(ticket_data["Notify"]))
         with st.form("update_ticket_form"):
                 new_status = st.selectbox("Update Status",
                                           ["Open", "In Progress", "Closed"],
@@ -523,7 +527,8 @@ with col2:
                 has_changes = (
                         new_status != ticket_data["Status"] or
                         new_priority != ticket_data["Priority"] or
-                        comments.strip() != ""
+                        comments.strip() != "" or
+                        new_notify != ticket_data["Notify"]
                 )
 
                 if update_submitted and not has_changes:
@@ -545,6 +550,7 @@ with col2:
                                 ticket_id=ticket_data["ID"],
                                 creator_name=ticket_data.get("Created By", "Unknown"),
                                 assigned_name=ticket_data.get("Assigned To", "Unknown"),
+                                notify=new_notify
                             )
 
                             if success:
