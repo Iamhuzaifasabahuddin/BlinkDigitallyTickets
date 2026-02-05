@@ -505,6 +505,7 @@ with col2:
                         unsafe_allow_html=True)
             st.markdown(f"<p style='font-size:20px;'>📕 <b>Assigned To:</b> {ticket_data['Assigned To']}</p>",
                         unsafe_allow_html=True)
+            new_notify = ticket_data["Notify"]
         if st.session_state.authenticated:
             new_notify = st.selectbox("Update Notify", ["Yes", "No"], index=["Yes", "No"].index(ticket_data["Notify"]))
         with st.form("update_ticket_form"):
@@ -532,7 +533,6 @@ with col2:
 
                 if update_submitted and not has_changes:
                     st.warning("⚠️ No changes detected for this ticket.")
-
                 if update_submitted and has_changes:
                     with st.spinner("Updating ticket in Notion..."):
                         try:
