@@ -9,22 +9,19 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 hide_st_style = """
-    <style>   
-    ._link_gzau3_10 {visibility: hidden;}
-    ._profilePreview_gzau3_63 {visibility: hidden;}
-    .st-emotion-cache-scp8yw{visibility: hidden;}
-    </style>
-    """
+"""
+
 st.markdown(hide_st_style, unsafe_allow_html=True)
 st.set_page_config(page_title="Support tickets", page_icon="🎫", layout="centered")
+
 st.title("🎫 Support Tickets for Blink Digitally")
 st.write(
     """
     Use this app to submit in any publishing updates, republication details, or reminders.
     """
 )
-client = WebClient(token=st.secrets.get("Slack", ""))
 
+client = WebClient(token=st.secrets.get("Slack", ""))
 name_all = st.secrets.get("name_all", {})
 
 
@@ -44,19 +41,19 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or st.secrets.get("ADMIN_PASSWORD",
 if not DATABASE_ID:
     st.error("Please set NOTION_DATABASE_ID in your environment or Streamlit secrets.")
     st.info("""
-	**Setup Instructions:**
-	1. Create a Notion integration at https://www.notion.so/my-integrations
-	2. Create a database in Notion with these properties:
-	   - ID (Title)
-	   - Issue (Text)
-	   - Status (Select: Open, In Progress, Closed)
-	   - Priority (Select: High, Medium, Low)
-	   - Date Submitted (Date)
-	   - Resolved Date (Date)
-	   - Created By (Select)
-	3. Share your database with your integration
-	4. Set NOTION_TOKEN, NOTION_DATABASE_ID, and ADMIN_PASSWORD in your environment or `.streamlit/secrets.toml`
-	""")
+    **Setup Instructions:**
+    1. Create a Notion integration at https://www.notion.so/my-integrations
+    2. Create a database in Notion with these properties:
+       - ID (Title)
+       - Issue (Text)
+       - Status (Select: Open, In Progress, Closed)
+       - Priority (Select: High, Medium, Low)
+       - Date Submitted (Date)
+       - Resolved Date (Date)
+       - Created By (Select)
+    3. Share your database with your integration
+    4. Set NOTION_TOKEN, NOTION_DATABASE_ID, and ADMIN_PASSWORD in your environment or `.streamlit/secrets.toml`
+    """)
     st.stop()
 
 notion = get_notion_client()
@@ -81,12 +78,43 @@ def send_dm(user_id, message):
         print(f"❌ Error sending message: {e.response['error']}")
 
 
+def send_files_to_slack(user_id, files, ticket_id, issue):
+    """Upload files to Slack and send them in a DM."""
+    try:
+        if not files:
+            return True
+
+        # Send initial message
+        intro_message = f"📎 *Files attached to Ticket {ticket_id}*\n*Issue:* {issue}\n"
+        client.chat_postMessage(channel=user_id, text=intro_message)
+
+        for uploaded_file in files:
+            file_content = uploaded_file.read()
+            conversation = client.conversations_open(users=user_id)
+            channel_id = conversation['channel']['id']
+
+            response = client.files_upload_v2(
+                channel=channel_id,
+                file=file_content
+            )
+
+            uploaded_file.seek(0)
+
+        print(f"✅ {len(files)} file(s) sent to Slack user {user_id}")
+        return True
+
+    except SlackApiError as e:
+        print(f"❌ Error uploading files to Slack: {e.response['error']}")
+        return False
+
+
 def fetch_tickets_from_notion():
     """Fetch all tickets from Notion database with pagination."""
     try:
         tickets = []
         has_more = True
         start_cursor = None
+
         while has_more:
             if start_cursor:
                 results = notion.data_sources.query(
@@ -95,12 +123,13 @@ def fetch_tickets_from_notion():
                     sorts=[{"timestamp": "created_time", "direction": "ascending"}]
                 )
             else:
-                results = notion.data_sources.query(data_source_id=DATASOURCE_ID,
-                                                 sorts=[{"timestamp": "created_time", "direction": "ascending"}])
+                results = notion.data_sources.query(
+                    data_source_id=DATASOURCE_ID,
+                    sorts=[{"timestamp": "created_time", "direction": "ascending"}]
+                )
 
             for page in results["results"]:
                 props = page["properties"]
-
                 ticket_id = props["ID"]["title"][0]["text"]["content"] if props["ID"]["title"] else ""
                 if not ticket_id or "-" not in ticket_id:
                     ticket_id = "TICKET-0001"
@@ -108,12 +137,14 @@ def fetch_tickets_from_notion():
                 ticket = {
                     "page_id": page["id"],
                     "ID": ticket_id,
-                    "Issue": props["Issue"]["rich_text"][0]["text"]["content"] if props["Issue"]["rich_text"] else "",
+                    "Issue": props["Issue"]["rich_text"][0]["text"]["content"] if props["Issue"][
+                        "rich_text"] else "",
                     "Status": props["Status"]["select"]["name"] if props["Status"]["select"] else "Open",
                     "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
                     "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
                         "date"] else "",
-                    "Submitted Time": props["Submitted Time"]["rich_text"][0]["text"] ["content"] if props["Submitted Time"]["rich_text"] else "",
+                    "Submitted Time": props["Submitted Time"]["rich_text"][0]["text"][
+                        "content"] if props["Submitted Time"]["rich_text"] else "",
                     "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"][
                         "name"] else "",
                     "Assigned To": props["Assigned To"]["select"]["name"] if props["Assigned To"]["select"][
@@ -121,7 +152,8 @@ def fetch_tickets_from_notion():
                     "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
                                                                                 props["Resolved Date"][
                                                                                     "date"] else None,
-                    "Resolved Time": props["Resolved Time"]["rich_text"][0]["text"] ["content"] if props["Resolved Time"]["rich_text"] else "",
+                    "Resolved Time": props["Resolved Time"]["rich_text"][0]["text"][
+                        "content"] if props["Resolved Time"]["rich_text"] else "",
                     "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
                         "rich_text"] else "",
                     "Ticket Type": props["Ticket Type"]["rich_text"][0]["text"]["content"] if props["Ticket Type"][
@@ -135,57 +167,58 @@ def fetch_tickets_from_notion():
             start_cursor = results.get("next_cursor", None)
 
         df = pd.DataFrame(tickets)
-
         if not df.empty:
             if "Date Submitted" in df.columns:
-                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"],format="%Y-%m-%d", errors='coerce')
+                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"], format="%Y-%m-%d", errors='coerce')
             if "Resolved Date" in df.columns:
                 df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], format="%Y-%m-%d", errors='coerce')
 
         return df
+
     except Exception as e:
         st.error(f"Error fetching tickets from Notion: {e}")
-        return pd.DataFrame(columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time", "Resolved Date", "Resolved Time", "Comments", "Ticket Type"])
+        return pd.DataFrame(
+            columns=["page_id", "ID", "Issue", "Status", "Priority", "Date Submitted", "Submitted Time",
+                     "Resolved Date", "Resolved Time", "Comments", "Ticket Type"])
 
 
-def send_ticket_notifications(ticket_id, issue, priority, status,date, time,  user_details, creator_name, assigned_name):
+def send_ticket_notifications(ticket_id, issue, priority, status, date, time, user_details, creator_name,
+                              assigned_name, uploaded_files=None):
     """Send Slack notifications to both ticket creator and assigned user."""
     try:
         if user_details['receiver_id']:
             assigned_message = f"""🎫 *New Ticket Assigned to You*
-
 *🆔 Ticket ID:* {ticket_id}
 *⏰ Priority:* {priority}
 *📊 Status:* {status}
 *📅 Created Date (PKST):* {date}
 *⌛ Created Time (PKST):* {time}
 *➕ Created By:* {creator_name}
-
-*❓ Issue:*
-{issue}
+*❓ Issue:* {issue}
 
 Please review and update the ticket status accordingly."""
-
             send_dm(user_details['receiver_id'], assigned_message)
+
+            if uploaded_files:
+                send_files_to_slack(user_details['receiver_id'], uploaded_files, ticket_id, issue)
+
             print(f"✅ Notification sent to {assigned_name} ({user_details['receiver_email']})")
         else:
             print(f"⚠️ Could not send notification to {assigned_name} - Slack ID not found")
 
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
-            creator_message = f"""✅ *Ticket Created Successfully*
+            files_text = f"\n*📎 Attachments:* {len(uploaded_files)} file(s)" if uploaded_files else ""
 
+            creator_message = f"""✅ *Ticket Created Successfully*
 *🆔 Ticket ID:* {ticket_id}
 *⏰ Priority:* {priority}
 *📊 Status:* {status}
 *📅 Created Date (PKST):* {date}
 *⌛ Created Time (PKST):* {time}
 *📕 Assigned To:* {assigned_name}
-
-*❓ Issue:*
-{issue}
+*❓ Issue:* {issue}{files_text}
 
 Your ticket has been submitted and assigned. You'll be notified of any updates."""
-
             send_dm(user_details['sender_id'], creator_message)
             print(f"✅ Confirmation sent to {creator_name} ({user_details['sender_email']})")
         elif user_details['sender_id'] == user_details['receiver_id']:
@@ -222,6 +255,7 @@ def get_user_details(name, assigned):
             "sender_id": sender_id,
             "receiver_id": receiver_id
         }
+
     except Exception as e:
         print(f"Error getting user details: {e}")
         return {
@@ -232,10 +266,9 @@ def get_user_details(name, assigned):
         }
 
 
-def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name, assigned):
+def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, name, assigned, uploaded_files=None):
     """Create a new ticket in Notion database."""
     try:
-
         if isinstance(date_submitted, (datetime.date, datetime.datetime)):
             date_submitted_str = date_submitted.strftime("%Y-%m-%d")
         else:
@@ -245,43 +278,49 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
         now_pkt = datetime.datetime.now(pkt)
         formatted_time = now_pkt.time().strftime("%I:%M %p")
         formatted_date = date_submitted.strftime("%d-%B-%Y")
+
         ticket_type = None
         if name == assigned:
             ticket_type = "Personal"
         else:
             ticket_type = "Normal"
 
+        properties = {
+            "ID": {"title": [{"text": {"content": ticket_id}}]},
+            "Issue": {"rich_text": [{"text": {"content": issue}}]},
+            "Status": {"select": {"name": status}},
+            "Priority": {"select": {"name": priority}},
+            "Created By": {"select": {"name": name}},
+            "Assigned To": {"select": {"name": assigned}},
+            "Date Submitted": {"date": {"start": date_submitted_str}},
+            "Submitted Time": {"rich_text": [{"text": {"content": formatted_time}}]},
+            "Ticket Type": {"rich_text": [{"text": {"content": ticket_type}}]},
+            "Notify": {"rich_text": [{"text": {"content": "Yes"}}]},
+        }
+
         notion.pages.create(
             parent={"data_source_id": DATASOURCE_ID},
-            properties={
-                "ID": {"title": [{"text": {"content": ticket_id}}]},
-                "Issue": {"rich_text": [{"text": {"content": issue}}]},
-                "Status": {"select": {"name": status}},
-                "Priority": {"select": {"name": priority}},
-                "Created By": {"select": {"name": name}},
-                "Assigned To": {"select": {"name": assigned}},
-                "Date Submitted": {"date": {"start": date_submitted_str}},
-                "Submitted Time": {"rich_text": [{"text": {"content": formatted_time}}]},
-                "Ticket Type": {"rich_text": [{"text": {"content": ticket_type}}]},
-                "Notify": {"rich_text": [{"text": {"content": "Yes"}}]},
-            }
+            properties=properties
         )
 
         user_details = get_user_details(name, assigned)
-        send_ticket_notifications(ticket_id, issue, priority, status,formatted_date, formatted_time, user_details, name, assigned)
+        send_ticket_notifications(ticket_id, issue, priority, status, formatted_date, formatted_time, user_details,
+                                  name, assigned, uploaded_files)
         return True
+
     except Exception as e:
         st.error(f"Error creating ticket: {e}")
         return False
 
 
-def send_ticket_update_notifications(ticket_id, old_status, new_status, old_priority, new_priority,
-                                     issue, creator_name, assigned_name, comments, resolved_date=None):
+def send_ticket_update_notifications(ticket_id, old_status, new_status, old_priority, new_priority, issue,
+                                     creator_name, assigned_name, comments, resolved_date=None):
     """Send Slack notifications when a ticket is updated."""
     try:
         pkt = pytz.timezone("Asia/Karachi")
         now_pkt = datetime.datetime.now(pkt)
         formatted_time = now_pkt.time().strftime("%I:%M %p")
+
         changes = []
         if old_status != new_status:
             changes.append(f"*Status:* {old_status} → {new_status}")
@@ -292,40 +331,30 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             changes.append(f"*Resolved Time (PKST):* {formatted_time}")
         if comments:
             changes.append(f"*Comments:* {comments}")
+
         if not changes:
             return
 
         changes_text = "\n".join(changes)
-
         user_details = get_user_details(creator_name, assigned_name)
 
         if user_details['receiver_id']:
             assigned_message = f"""🔔 *Ticket Updated*
-
 *🆔 Ticket ID:* {ticket_id}
 *➕ Created By:* {creator_name}
-
 *✏ Changes:*
 {changes_text}
-
-*❓ Issue:*
-{issue}"""
-
+*❓ Issue:* {issue}"""
             send_dm(user_details['receiver_id'], assigned_message)
             print(f"✅ Update notification sent to {assigned_name} ({user_details['receiver_email']})")
 
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
             creator_message = f"""🔔 *Your Ticket Was Updated*
-
 *🆔 Ticket ID:* {ticket_id}
 *📕 Assigned To:* {assigned_name}
-
 *✏ Changes:*
 {changes_text}
-
-*❓ Issue:*
-{issue}"""
-
+*❓ Issue:* {issue}"""
             send_dm(user_details['sender_id'], creator_message)
             print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
 
@@ -333,9 +362,9 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
         print(f"❌ Error sending update notifications: {e}")
 
 
-def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, comments,
-                            old_status=None, old_priority=None, ticket_id=None,
-                            creator_name=None, assigned_name=None, new_notify=None, old_notify=None):
+def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, comments, old_status=None,
+                            old_priority=None, ticket_id=None, creator_name=None, assigned_name=None, new_notify=None,
+                            old_notify=None):
     """Update an existing ticket in Notion and send notifications."""
     try:
         properties = {
@@ -346,11 +375,13 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
 
         if resolved_date and pd.notna(resolved_date):
             if isinstance(resolved_date, (pd.Timestamp, datetime.datetime, datetime.date)):
-                resolved_date_str = resolved_date.strftime("%Y-%m-%d") if hasattr(resolved_date, 'strftime') else str(
+                resolved_date_str = resolved_date.strftime("%Y-%m-%d") if hasattr(resolved_date,
+                                                                                  'strftime') else str(
                     resolved_date)
                 pkt = pytz.timezone("Asia/Karachi")
                 now_pkt = datetime.datetime.now(pkt)
                 formatted_time = now_pkt.time().strftime("%I:%M %p")
+
                 properties["Resolved Date"] = {"date": {"start": resolved_date_str}}
                 properties["Resolved Time"] = {"rich_text": [{"text": {"content": formatted_time}}]}
         else:
@@ -358,6 +389,7 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
 
         if comments:
             properties["Comments"] = {"rich_text": [{"text": {"content": comments}}]}
+
         if new_notify != old_notify and new_notify:
             properties["Notify"] = {"rich_text": [{"text": {"content": new_notify}}]}
 
@@ -372,14 +404,23 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
                 formatted_resolved_date = resolved_date.strftime("%d-%B-%Y")
 
             send_ticket_update_notifications(
-                ticket_id, old_status, status, old_priority, priority,
-                issue, creator_name, assigned_name,
+                ticket_id,
+                old_status,
+                status,
+                old_priority,
+                priority,
+                issue,
+                creator_name,
+                assigned_name,
                 comments,
                 formatted_resolved_date,
             )
-            if new_notify != old_notify and new_notify:
-                st.success(f"{ticket_id} Notification Updated to {new_notify}")
+
+        if new_notify != old_notify and new_notify:
+            st.success(f"{ticket_id} Notification Updated to {new_notify}")
+
         return True
+
     except Exception as e:
         st.error(f"Error updating ticket: {e}")
         return False
@@ -405,10 +446,10 @@ with st.sidebar:
             st.session_state.authenticated = False
             st.rerun()
 
-if st.button("🔄 Fetch Latest"):
-    with st.spinner("Loading tickets from Notion..."):
-        st.session_state.df = fetch_tickets_from_notion()
-        st.session_state.original_df = st.session_state.df.copy()
+    if st.button("🔄 Fetch Latest"):
+        with st.spinner("Loading tickets from Notion..."):
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
 
 col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
 
@@ -419,63 +460,92 @@ with col1:
 
     with st.form("add_ticket_form"):
         issue = st.text_area("Describe the issue")
+
+        uploaded_files = st.file_uploader(
+            "Attach files (optional)",
+            accept_multiple_files=True,
+            help="You can attach images, PDFs, documents, etc."
+        )
+
+        if uploaded_files:
+            total_size = sum(f.size for f in uploaded_files)
+            max_size = 50 * 1024 * 1024
+
+            st.info(f"📎 {len(uploaded_files)} file(s) selected ({total_size / 1024 / 1024:.2f} MB)")
+
+            if total_size > max_size:
+                st.warning(f"⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
+
         today = st.date_input("Date (PKST)", now_pkt.date())
         priority = st.selectbox("Priority", ["High", "Medium", "Low"])
         name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
-        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""), index=st.secrets.get("NAMES", "").index("Huzaifa Sabah Uddin"))
+        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""),
+                                index=st.secrets.get("NAMES", "").index("Huzaifa Sabah Uddin"))
         submitted = st.form_submit_button("Submit")
 
-    if submitted:
-        if not issue.strip():
-            st.error("⚠️ Please describe the issue before submitting.")
-        elif not name or not assigned:
-            st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
-        else:
-            try:
-                with st.spinner("Fetching latest ticket from Notion..."):
-                    try:
-                        results = notion.data_sources.query(
-                            data_source_id=DATASOURCE_ID,
-                            page_size=1,
-                            sorts=[{"timestamp": "created_time", "direction": "descending"}]
-                        )
+        if submitted:
+            if not issue.strip():
+                st.error("⚠️ Please describe the issue before submitting.")
+            elif not name or not assigned:
+                st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
+            elif uploaded_files and sum(f.size for f in uploaded_files) > 50 * 1024 * 1024:
+                st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
+            else:
+                try:
+                    with st.spinner("Fetching latest ticket from Notion..."):
+                        try:
+                            results = notion.data_sources.query(
+                                data_source_id=DATASOURCE_ID,
+                                page_size=1,
+                                sorts=[{"timestamp": "created_time", "direction": "descending"}]
+                            )
 
-                        if results.get("results"):
-                            latest_page = results["results"][0]
-                            latest_id_prop = latest_page["properties"]["ID"]["title"]
-                            latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
+                            if results.get("results"):
+                                latest_page = results["results"][0]
+                                latest_id_prop = latest_page["properties"]["ID"]["title"]
+                                latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
 
-                            if "-" in latest_id:
-                                recent_ticket_number = int(latest_id.split("-")[1])
+                                if "-" in latest_id:
+                                    recent_ticket_number = int(latest_id.split("-")[1])
+                                else:
+                                    recent_ticket_number = 0
                             else:
                                 recent_ticket_number = 0
-                        else:
+
+                        except Exception as e:
+                            st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
                             recent_ticket_number = 0
 
-                    except Exception as e:
-                        st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
-                        recent_ticket_number = 0
+                        new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
 
-                new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+                    with st.spinner("Creating ticket in Notion..."):
+                        try:
+                            success = create_ticket_in_notion(
+                                new_ticket_id,
+                                issue,
+                                "Open",
+                                priority,
+                                today,
+                                name,
+                                assigned,
+                                uploaded_files
+                            )
 
-                with st.spinner("Creating ticket in Notion..."):
-                    try:
-                        success = create_ticket_in_notion(
-                            new_ticket_id, issue, "Open", priority, today, name, assigned
-                        )
+                            if success:
+                                st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
+                                if uploaded_files:
+                                    st.success(f"📎 {len(uploaded_files)} file(s) sent to {assigned}")
+                                st.session_state.df = fetch_tickets_from_notion()
+                                st.session_state.original_df = st.session_state.df.copy()
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to create the ticket in Notion. Please try again later.")
 
-                        if success:
-                            st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
-                            st.session_state.df = fetch_tickets_from_notion()
-                            st.session_state.original_df = st.session_state.df.copy()
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to create the ticket in Notion. Please try again later.")
+                        except Exception as e:
+                            st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
-                    except Exception as e:
-                        st.error(f"🚨 Error while creating ticket in Notion: {e}")
-            except Exception as e:
-                st.error(f"🚨 Error while creating ticket in Notion: {e}")
+                except Exception as e:
+                    st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
 with col2:
     st.header("✏️ Update an Existing Ticket")
@@ -496,25 +566,25 @@ with col2:
         if selected_ticket:
             ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
 
-            st.markdown(f"<h3>📄 <b>Issue:</b> {ticket_data['Issue']}</h3>", unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:20px;'>📊 <b>Current Status:</b> {ticket_data['Status']}</p>",
+            st.markdown(f"<p style='font-size: 16px;'>📄 Issue: {ticket_data['Issue']}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size: 16px;'>📊 Current Status: {ticket_data['Status']}</p>",
                         unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:20px;'>⏰ <b>Current Priority:</b> {ticket_data['Priority']}</p>",
+            st.markdown(f"<p style='font-size: 16px;'>⏰ Current Priority: {ticket_data['Priority']}</p>",
                         unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:20px;'>➕ <b>Created By:</b> {ticket_data['Created By']}</p>",
+            st.markdown(f"<p style='font-size: 16px;'>➕ Created By: {ticket_data['Created By']}</p>",
                         unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:20px;'>📕 <b>Assigned To:</b> {ticket_data['Assigned To']}</p>",
+            st.markdown(f"<p style='font-size: 16px;'>📕 Assigned To: {ticket_data['Assigned To']}</p>",
                         unsafe_allow_html=True)
-            new_notify = ticket_data["Notify"]
-        if st.session_state.authenticated:
-            new_notify = st.selectbox("Update Notify", ["Yes", "No"], index=["Yes", "No"].index(ticket_data["Notify"]))
-        with st.form("update_ticket_form"):
-                new_status = st.selectbox("Update Status",
-                                          ["Open", "In Progress", "Closed"],
-                                          index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
 
-                new_priority = st.selectbox("Update Priority",
-                                            ["High", "Medium", "Low"],
+            new_notify = ticket_data["Notify"]
+            if st.session_state.authenticated:
+                new_notify = st.selectbox("Update Notify", ["Yes", "No"],
+                                          index=["Yes", "No"].index(ticket_data["Notify"]))
+
+            with st.form("update_ticket_form"):
+                new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
+                                          index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
+                new_priority = st.selectbox("Update Priority", ["High", "Medium", "Low"],
                                             index=["High", "Medium", "Low"].index(ticket_data["Priority"]))
 
                 resolved_date = None
@@ -522,7 +592,6 @@ with col2:
                     resolved_date = st.date_input("Resolved Date (PKST)", now_pkt.date())
 
                 comments = st.text_area("Comments")
-
                 update_submitted = st.form_submit_button("Update Ticket")
 
                 has_changes = (
@@ -533,6 +602,7 @@ with col2:
 
                 if update_submitted and not has_changes:
                     st.warning("⚠️ No changes detected for this ticket.")
+
                 if update_submitted and has_changes:
                     with st.spinner("Updating ticket in Notion..."):
                         try:
@@ -560,8 +630,10 @@ with col2:
                                 st.rerun()
                             else:
                                 st.error("❌ Failed to update the ticket.")
+
                         except Exception as e:
                             st.error(f"🚨 Error updating ticket: {e}")
+
 st.divider()
 
 if "df" not in st.session_state:
@@ -569,9 +641,7 @@ if "df" not in st.session_state:
     st.session_state.original_df = st.session_state.df.copy()
 
 df = st.session_state.df.copy()
-
 df["Month"] = df["Date Submitted"].dt.strftime("%B")
-
 unique_months = sorted(df["Month"].unique().tolist())
 months = ["All"] + unique_months
 
@@ -579,6 +649,7 @@ current_month = datetime.datetime.now(pkt).strftime("%B")
 default_index = months.index("All") if current_month in months else 0
 
 selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
+
 if selected_month == "All":
     filtered_df = df.copy()
 else:
@@ -598,8 +669,8 @@ if filtered_df.empty:
 
 active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
 personal_active = active_df[active_df["Ticket Type"] == "Personal"]
-
 active_df = active_df[active_df["Ticket Type"] == "Normal"]
+
 closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
 personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
 closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
@@ -617,7 +688,6 @@ else:
         value=f"{len(active_df):,}"
     )
 
-
 st.metric(label="Number of active personal tickets", value=len(personal_active))
 
 if st.session_state.authenticated:
@@ -629,7 +699,8 @@ if st.session_state.authenticated:
 
 display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",  "Created By", "Assigned To", "Ticket Type"]
+disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To",
+                    "Ticket Type"]
 if not st.session_state.authenticated:
     disabled_columns = list(display_active_df.columns)
 
@@ -639,7 +710,8 @@ edited_active_df = st.data_editor(
     hide_index=True,
     key="active_editor",
     column_config={
-        "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"], required=True),
+        "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                   required=True),
         "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
         "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
         "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
@@ -651,6 +723,7 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
     if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
         with st.spinner("Saving changes to Notion..."):
             success_count, error_count = 0, 0
+
             for idx in edited_active_df.index:
                 original_row = display_active_df.loc[idx]
                 edited_row = edited_active_df.loc[idx]
@@ -670,6 +743,7 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
                         creator_name=original_row.get("Created By", "Unknown"),
                         assigned_name=original_row.get("Assigned To", "Unknown"),
                     )
+
                     if success:
                         success_count += 1
                     else:
@@ -685,6 +759,7 @@ if st.session_state.authenticated and not edited_active_df.equals(display_active
             st.rerun()
 
 st.divider()
+
 st.header("📦 Closed Tickets")
 
 if selected_month == "All":
@@ -699,13 +774,15 @@ else:
     )
 
 st.metric(label="Number of closed personal tickets", value=len(personal_closed))
+
 if closed_df.empty:
     st.info("No closed tickets for the selected month.")
 else:
     with st.expander("View Closed Tickets", expanded=False):
         display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
 
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To", "Ticket Type"]
+        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By",
+                                   "Assigned To", "Ticket Type"]
         if not st.session_state.authenticated:
             disabled_closed_columns = list(display_closed_df.columns)
 
@@ -729,6 +806,7 @@ else:
             if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
                 with st.spinner("Saving changes to Notion..."):
                     success_count, error_count = 0, 0
+
                     for idx in edited_closed_df.index:
                         original_row = display_closed_df.loc[idx]
                         edited_row = edited_closed_df.loc[idx]
@@ -748,6 +826,7 @@ else:
                                 creator_name=original_row.get("Created By", "Unknown"),
                                 assigned_name=original_row.get("Assigned To", "Unknown"),
                             )
+
                             if success:
                                 success_count += 1
                             else:
