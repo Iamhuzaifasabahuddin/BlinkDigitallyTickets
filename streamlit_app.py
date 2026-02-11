@@ -446,10 +446,10 @@ with st.sidebar:
             st.session_state.authenticated = False
             st.rerun()
 
-    if st.button("🔄 Fetch Latest"):
-        with st.spinner("Loading tickets from Notion..."):
-            st.session_state.df = fetch_tickets_from_notion()
-            st.session_state.original_df = st.session_state.df.copy()
+if st.button("🔄 Fetch Latest"):
+    with st.spinner("Loading tickets from Notion..."):
+        st.session_state.df = fetch_tickets_from_notion()
+        st.session_state.original_df = st.session_state.df.copy()
 
 col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
 
