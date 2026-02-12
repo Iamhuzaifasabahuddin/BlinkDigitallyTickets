@@ -142,31 +142,40 @@ if __name__ == '__main__':
     for name in name_list:
         tickets_exists: bool = False
         personal_exists: bool = False
+        printing_exists: bool = False
         if name not in ticket_dict:
             continue
 
         tickets, issues = ticket_dict.get(name, ([], [])) if name != "Huzaifa Sabah Uddin" else ([], [])
         tickets_3, personal = personal_dict.get(name, ([], []))
+        tickets_printing, printing = printed_dict.get(name, ([], [])) if name != "Huzaifa Sabah Uddin" else ([], [])
         id_ = get_user_id_by_email(names.get(name))
 
         if tickets:
-            ticket_lines = "\n".join([f"{t}: {i}" for t, i in zip(tickets, issues)])
+            ticket_lines = "\n\n".join([f"{t}: {i}" for t, i in zip(tickets, issues)])
             tickets_exists = True
         else:
             ticket_lines = ""
 
         if tickets_3:
-            personal_lines = "\n".join([f"{t}: {i}" for t, i in zip(tickets_3, personal)])
+            personal_lines = "\n\n".join([f"{t}: {i}" for t, i in zip(tickets_3, personal)])
             personal_exists = True
         else:
             personal_lines = ""
 
+        if tickets_printing:
+            printing_lines = "\n\n".join([f"{t}: {i}" for t, i in zip(tickets_printing, printing)])
+            printing_exists = True
+        else:
+            printing_lines = ""
+
+
         if tickets_exists:
             message = (
-                f"🔔 *Reminder for:* *<@{id_}>*\n\n"
+                f":bell: *Reminder for:* *<@{id_}>*\n\n"
                 f"Here are your open tickets:\n"
                 f"{ticket_lines}\n\n"
-                f"‼ Please provide an update to *<@{hexz_id}>* or update it on the app when possible. 📝"
+                f":bangbang: Please provide an update/reminder to *<@{hexz_id}>* or update it on the app when possible. 📝"
             )
             send_dm(id_, message)
 
@@ -175,21 +184,30 @@ if __name__ == '__main__':
 
         if personal_exists:
             message = (
-                f"🔔 *Personal Reminder for:* *<@{id_}>*\n\n"
+                f":bell: *Personal Reminder for:* *<@{id_}>*\n\n"
                 f"Here are your personal tickets reminders:\n"
                 f"{personal_lines}\n\n"
             )
             send_dm(id_, message)
 
+        if printing_exists:
+            message = (
+                f":printer: *Printing Reminder for:* *<@{id_}>*\n\n"
+                f"Here are your pending printed copy/ies tickets:\n"
+                f"{printing_lines}\n\n"
+                f":bangbang: Please remind *<@{hexz_id}>* if urgent or leave a comment on the app.📝"
+            )
+            send_dm(id_, message)
+
     tickets_2, printings = printed_dict.get("Huzaifa Sabah Uddin", ([], []))
     if tickets_2:
-        printed_lines = "\n".join([f"{t}: {i}" for t, i in zip(tickets_2, printings)])
+        printed_lines = "\n\n".join([f"{t}: {i}" for t, i in zip(tickets_2, printings)])
         message = (
-            f"🔔 *Printing Reminder for:* *<@{hexz_id}>*\n\n"
+            f":printer: *Printing Reminder for:* *<@{hexz_id}>*\n\n"
             f"Pending Prints:\n"
             f"{printed_lines}\n\n"
 
         )
         send_dm(hexz_id, message)
 
-    send_dm(hexz_id, "🔔 Reminder: Check your open tickets!")
+    send_dm(hexz_id, ":bell: Reminder: Check your open tickets!")

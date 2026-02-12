@@ -342,9 +342,10 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             assigned_message = f"""🔔 *Ticket Updated*
 *🆔 Ticket ID:* {ticket_id}
 *➕ Created By:* {creator_name}
+*❓ Issue:* {issue}
 *✏ Changes:*
 {changes_text}
-*❓ Issue:* {issue}"""
+"""
             send_dm(user_details['receiver_id'], assigned_message)
             print(f"✅ Update notification sent to {assigned_name} ({user_details['receiver_email']})")
 
@@ -352,9 +353,10 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             creator_message = f"""🔔 *Your Ticket Was Updated*
 *🆔 Ticket ID:* {ticket_id}
 *📕 Assigned To:* {assigned_name}
+*❓ Issue:* {issue}
 *✏ Changes:*
 {changes_text}
-*❓ Issue:* {issue}"""
+"""
             send_dm(user_details['sender_id'], creator_message)
             print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
 
