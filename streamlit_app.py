@@ -77,7 +77,6 @@ def send_dm(user_id, message):
     except SlackApiError as e:
         print(f"❌ Error sending message: {e.response['error']}")
 
-
 def send_files_to_slack(user_id, files, ticket_id, issue):
     """Upload files to Slack and send them in a DM."""
     try:
@@ -95,7 +94,8 @@ def send_files_to_slack(user_id, files, ticket_id, issue):
 
             response = client.files_upload_v2(
                 channel=channel_id,
-                file=file_content
+                file=file_content,
+                filename=uploaded_file.name
             )
 
             uploaded_file.seek(0)
@@ -106,6 +106,7 @@ def send_files_to_slack(user_id, files, ticket_id, issue):
     except SlackApiError as e:
         print(f"❌ Error uploading files to Slack: {e.response['error']}")
         return False
+
 
 
 def fetch_tickets_from_notion():
