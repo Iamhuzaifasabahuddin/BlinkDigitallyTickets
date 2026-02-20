@@ -623,7 +623,7 @@ def main():
         now_pkt = datetime.datetime.now(pkt)
 
         with st.form("add_ticket_form"):
-            issue = st.text_area("Describe the issue")
+            issue = st.text_area("Describe the issue", height=200)
 
             uploaded_files = st.file_uploader(
                 "Attach files (optional)",
