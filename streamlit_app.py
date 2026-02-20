@@ -1,6 +1,10 @@
 import datetime
+import hashlib
 import os
+import time
+from datetime import timedelta
 
+import extra_streamlit_components as stx
 import pandas as pd
 import pytz
 import streamlit as st
@@ -8,19 +12,131 @@ from notion_client import Client
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-hide_st_style = """
-"""
 
-st.markdown(hide_st_style, unsafe_allow_html=True)
-st.set_page_config(page_title="Support tickets", page_icon="🎫", layout="centered")
+def setup_page():
+    """Configure Streamlit page settings"""
+    st.set_page_config(
+        page_title="Support tickets",
+        page_icon="🎫",
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
 
-st.title("🎫 Support Tickets for Blink Digitally")
-st.write(
-    """
-    Use this app to submit in any publishing updates, republication details, or reminders.
-    """
-)
+    # hide_st_style = """
+    # <style>
+    #     #MainMenu {visibility: hidden;}
+    #     header {visibility: hidden;}
+    # </style>
+    # """
+    # st.markdown(hide_st_style, unsafe_allow_html=True)
 
+
+def hash_password(password):
+    """Hash password using SHA256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+class CookieAuth:
+    """Handle cookie-based passwordless authentication with password fallback"""
+
+    def __init__(self):
+        self.cookie_manager = stx.CookieManager()
+        self.cookie_name = st.secrets.get("ticket_cookie_name", "blink_ticket_cookie")
+        self.cookie_key = st.secrets.get("cookie_key", "secret_key_tickets")
+        self.expiry_days = int(st.secrets.get("ticket_cookie_expiry_days", 30))
+        self.username = st.secrets.get("auth_username_user", "admin")
+        self.user_name = st.secrets.get("auth_name_user", "Admin User")
+        self.password_hash = st.secrets.get("auth_password_user", "")
+
+    def generate_token(self):
+        """Generate a secure token"""
+        timestamp = datetime.datetime.now().isoformat()
+        data = f"{self.username}:{self.cookie_key}:{timestamp}"
+        return hashlib.sha256(data.encode()).hexdigest()
+
+    def verify_token(self, token):
+        """Verify if token is valid"""
+        return len(token) == 64 and token.isalnum()
+
+    def verify_password(self, password):
+        """Verify password against hash"""
+        return hash_password(password) == self.password_hash
+
+    def set_auth_cookie(self):
+        """Set authentication cookie"""
+        token = self.generate_token()
+        expiry = datetime.datetime.now() + timedelta(days=self.expiry_days)
+
+        self.cookie_manager.set(
+            self.cookie_name,
+            token,
+            expires_at=expiry
+        )
+
+        st.session_state.authentication_status = True
+        st.session_state.username = self.username
+        st.session_state.name = self.user_name
+        st.session_state.authenticated = True
+
+    def check_cookie(self):
+        """Check if valid cookie exists"""
+        cookies = self.cookie_manager.get_all()
+
+        if self.cookie_name in cookies:
+            token = cookies[self.cookie_name]
+
+            if self.verify_token(token):
+                # Valid cookie found - auto login
+                st.session_state.authentication_status = True
+                st.session_state.username = self.username
+                st.session_state.name = self.user_name
+                st.session_state.authenticated = True
+                return True
+
+        return False
+
+    def is_authenticated(self):
+        """Check if user is authenticated"""
+        if st.session_state.get('authentication_status') is False:
+            return False
+
+        if st.session_state.get('authentication_status') is True:
+            return True
+        return self.check_cookie()
+
+    def logout(self):
+        """Clear authentication"""
+        self.cookie_manager.delete(self.cookie_name)
+        st.session_state.authentication_status = False
+        st.session_state.username = None
+        st.session_state.name = None
+        st.session_state.authenticated = False
+
+
+def login_page(auth):
+    """Display login page"""
+    st.title("🔑 Support Tickets Login")
+    st.write("Access the Blink Digitally support ticket system")
+
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+
+        if submit:
+            # Check credentials
+            if username == auth.username and auth.verify_password(password):
+
+                auth.set_auth_cookie()
+                st.success("✅ Login successful!")
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                print(auth.username, password)
+                st.error("❌ Invalid username or password")
+
+
+# Initialize Slack client
 client = WebClient(token=st.secrets.get("Slack", ""))
 name_all = st.secrets.get("name_all", {})
 
@@ -77,6 +193,7 @@ def send_dm(user_id, message):
     except SlackApiError as e:
         print(f"❌ Error sending message: {e.response['error']}")
 
+
 def send_files_to_slack(user_id, files, ticket_id, issue):
     """Upload files to Slack and send them in a DM."""
     try:
@@ -106,7 +223,6 @@ def send_files_to_slack(user_id, files, ticket_id, issue):
     except SlackApiError as e:
         print(f"❌ Error uploading files to Slack: {e.response['error']}")
         return False
-
 
 
 def fetch_tickets_from_notion():
@@ -429,417 +545,467 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
         return False
 
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+def main():
+    """Main application entry point"""
+    setup_page()
 
-with st.sidebar:
-    st.header("🔐 Admin Access")
-    if not st.session_state.authenticated:
-        password_input = st.text_input("Enter admin password:", type="password", key="password")
-        if st.button("Login"):
-            if password_input == ADMIN_PASSWORD:
-                st.session_state.authenticated = True
-                st.success("Access granted!")
-                st.rerun()
-            else:
-                st.error("Incorrect password")
-    else:
-        st.success("✅ Authenticated")
-        if st.button("Logout"):
-            st.session_state.authenticated = False
+    # Initialize authentication
+    auth = CookieAuth()
+
+    # Check authentication status
+    if not auth.is_authenticated():
+        with st.spinner("🔄 Initializing secure session..."):
+            time.sleep(1.5)
+        login_page(auth)
+        return
+
+    # Main application UI
+    st.title(f"🎫 Support Tickets for Blink Digitally")
+    st.write(f"Welcome, **{st.session_state.get('name')}**!")
+    st.write("Use this app to submit in any publishing updates, republication details, or reminders.")
+
+    # Logout button in sidebar
+    with st.sidebar:
+        st.header(f"👤 {st.session_state.get('name')}")
+        if st.button("🚪 Logout"):
+            auth.logout()
             st.rerun()
 
-if st.button("🔄 Fetch Latest"):
-    with st.spinner("Loading tickets from Notion..."):
-        st.session_state.df = fetch_tickets_from_notion()
-        st.session_state.original_df = st.session_state.df.copy()
+        st.divider()
+        st.header("🔐 Admin Access")
+        if not st.session_state.get("admin_authenticated", False):
+            password_input = st.text_input("Enter admin password:", type="password", key="admin_password")
+            if st.button("Admin Login"):
+                if password_input == ADMIN_PASSWORD:
+                    st.session_state.admin_authenticated = True
+                    st.success("Admin access granted!")
+                    st.rerun()
+                else:
+                    st.error("Incorrect password")
+        else:
+            st.success("✅ Admin Authenticated")
+            if st.button("Admin Logout"):
+                st.session_state.admin_authenticated = False
+                st.rerun()
 
-col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
+    if st.button("🔄 Fetch Latest"):
+        with st.spinner("Loading tickets from Notion..."):
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
 
-with col1:
-    st.header("➕ Add a New Ticket")
-    pkt = pytz.timezone("Asia/Karachi")
-    now_pkt = datetime.datetime.now(pkt)
+    col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
 
-    with st.form("add_ticket_form"):
-        issue = st.text_area("Describe the issue")
+    with col1:
+        expander = st.expander("Order Details Template 📄")
 
-        uploaded_files = st.file_uploader(
-            "Attach files (optional)",
-            accept_multiple_files=True,
-            help="You can attach images, PDFs, documents, etc."
+        expander.info(
+            """Follow the template:
+
+        Printed Copies
+        Example: 25 Printed Copies (Paperback)
+
+        Client Name:
+        (Example: John Doe)
+
+        Client Brand:
+        (Example: Bookmarketeers)
+
+        Client Phone Number:
+        (Example: 0122345567)
+
+        Client Address:
+        (Example: 3811 Ditmars Blvd, Queens, New York, USA)
+        """
         )
 
-        if uploaded_files:
-            total_size = sum(f.size for f in uploaded_files)
-            max_size = 50 * 1024 * 1024
+        st.header("➕ Add a New Ticket")
+        pkt = pytz.timezone("Asia/Karachi")
+        now_pkt = datetime.datetime.now(pkt)
 
-            st.info(f"📎 {len(uploaded_files)} file(s) selected ({total_size / 1024 / 1024:.2f} MB)")
+        with st.form("add_ticket_form"):
+            issue = st.text_area("Describe the issue")
 
-            if total_size > max_size:
-                st.warning(f"⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
+            uploaded_files = st.file_uploader(
+                "Attach files (optional)",
+                accept_multiple_files=True,
+                help="You can attach images, PDFs, documents, etc."
+            )
 
-        today = st.date_input("Date (PKST)", now_pkt.date())
-        priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-        name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
-        assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""),
-                                index=st.secrets.get("NAMES", "").index("Huzaifa Sabah Uddin"))
-        submitted = st.form_submit_button("Submit")
+            if uploaded_files:
+                total_size = sum(f.size for f in uploaded_files)
+                max_size = 50 * 1024 * 1024
 
-        if submitted:
-            if not issue.strip():
-                st.error("⚠️ Please describe the issue before submitting.")
-            elif not name or not assigned:
-                st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
-            elif uploaded_files and sum(f.size for f in uploaded_files) > 50 * 1024 * 1024:
-                st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
-            else:
-                try:
-                    with st.spinner("Fetching latest ticket from Notion..."):
-                        try:
-                            results = notion.data_sources.query(
-                                data_source_id=DATASOURCE_ID,
-                                page_size=1,
-                                sorts=[{"timestamp": "created_time", "direction": "descending"}]
-                            )
+                st.info(f"📎 {len(uploaded_files)} file(s) selected ({total_size / 1024 / 1024:.2f} MB)")
 
-                            if results.get("results"):
-                                latest_page = results["results"][0]
-                                latest_id_prop = latest_page["properties"]["ID"]["title"]
-                                latest_id = latest_id_prop[0]["text"]["content"] if latest_id_prop else "TICKET-0000"
+                if total_size > max_size:
+                    st.warning(f"⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
 
-                                if "-" in latest_id:
-                                    recent_ticket_number = int(latest_id.split("-")[1])
+            today = st.date_input("Date (PKST)", now_pkt.date())
+            priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+            name = st.selectbox("Created By", st.secrets.get("NAMES", ""))
+            assigned = st.selectbox("Assigned To", st.secrets.get("NAMES", ""),
+                                    index=st.secrets.get("NAMES", "").index("Huzaifa Sabah Uddin"))
+            submitted = st.form_submit_button("Submit")
+
+            if submitted:
+                if not issue.strip():
+                    st.error("⚠️ Please describe the issue before submitting.")
+                elif not name or not assigned:
+                    st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
+                elif uploaded_files and sum(f.size for f in uploaded_files) > 50 * 1024 * 1024:
+                    st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
+                else:
+                    try:
+                        with st.spinner("Fetching latest ticket from Notion..."):
+                            try:
+                                results = notion.data_sources.query(
+                                    data_source_id=DATASOURCE_ID,
+                                    page_size=1,
+                                    sorts=[{"timestamp": "created_time", "direction": "descending"}]
+                                )
+
+                                if results.get("results"):
+                                    latest_page = results["results"][0]
+                                    latest_id_prop = latest_page["properties"]["ID"]["title"]
+                                    latest_id = latest_id_prop[0]["text"][
+                                        "content"] if latest_id_prop else "TICKET-0000"
+
+                                    if "-" in latest_id:
+                                        recent_ticket_number = int(latest_id.split("-")[1])
+                                    else:
+                                        recent_ticket_number = 0
                                 else:
                                     recent_ticket_number = 0
-                            else:
+
+                            except Exception as e:
+                                st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
                                 recent_ticket_number = 0
 
-                        except Exception as e:
-                            st.warning(f"⚠️ Could not fetch the latest ticket ID: {e}. Defaulting to TICKET-0000")
-                            recent_ticket_number = 0
+                            new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
 
-                        new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+                        with st.spinner("Creating ticket in Notion..."):
+                            try:
+                                success = create_ticket_in_notion(
+                                    new_ticket_id,
+                                    issue,
+                                    "Open",
+                                    priority,
+                                    today,
+                                    name,
+                                    assigned,
+                                    uploaded_files
+                                )
 
-                    with st.spinner("Creating ticket in Notion..."):
-                        try:
-                            success = create_ticket_in_notion(
-                                new_ticket_id,
-                                issue,
-                                "Open",
-                                priority,
-                                today,
-                                name,
-                                assigned,
-                                uploaded_files
-                            )
+                                if success:
+                                    st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
+                                    if uploaded_files:
+                                        st.success(f"📎 {len(uploaded_files)} file(s) sent to {assigned}")
+                                    st.session_state.df = fetch_tickets_from_notion()
+                                    st.session_state.original_df = st.session_state.df.copy()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to create the ticket in Notion. Please try again later.")
 
-                            if success:
-                                st.success(f"✅ Ticket **{new_ticket_id}** created successfully in Notion!")
-                                if uploaded_files:
-                                    st.success(f"📎 {len(uploaded_files)} file(s) sent to {assigned}")
-                                st.session_state.df = fetch_tickets_from_notion()
-                                st.session_state.original_df = st.session_state.df.copy()
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to create the ticket in Notion. Please try again later.")
+                            except Exception as e:
+                                st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
-                        except Exception as e:
-                            st.error(f"🚨 Error while creating ticket in Notion: {e}")
+                    except Exception as e:
+                        st.error(f"🚨 Error while creating ticket in Notion: {e}")
 
-                except Exception as e:
-                    st.error(f"🚨 Error while creating ticket in Notion: {e}")
+    with col2:
+        st.header("✏️ Update an Existing Ticket")
 
-with col2:
-    st.header("✏️ Update an Existing Ticket")
+        if "df" not in st.session_state:
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
+
+        temp_df = st.session_state.df.copy()
+        active_tickets = temp_df[temp_df["Status"].isin(["Open", "In Progress"])]
+
+        if active_tickets.empty:
+            st.info("No active tickets available to update.")
+        else:
+            ticket_options = active_tickets["ID"].tolist()
+            selected_ticket = st.selectbox("Select Ticket to Update", ticket_options)
+
+            if selected_ticket:
+                ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
+
+                st.markdown(f"<p style='font-size: 16px;'>📄 Issue: {ticket_data['Issue']}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size: 16px;'>📊 Current Status: {ticket_data['Status']}</p>",
+                            unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size: 16px;'>⏰ Current Priority: {ticket_data['Priority']}</p>",
+                            unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size: 16px;'>➕ Created By: {ticket_data['Created By']}</p>",
+                            unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size: 16px;'>📕 Assigned To: {ticket_data['Assigned To']}</p>",
+                            unsafe_allow_html=True)
+
+                new_notify = ticket_data["Notify"]
+                if st.session_state.get("admin_authenticated", False):
+                    new_notify = st.selectbox("Update Notify", ["Yes", "No"],
+                                              index=["Yes", "No"].index(ticket_data["Notify"]))
+
+                with st.form("update_ticket_form"):
+                    new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
+                                              index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
+                    new_priority = st.selectbox("Update Priority", ["High", "Medium", "Low"],
+                                                index=["High", "Medium", "Low"].index(ticket_data["Priority"]))
+
+                    resolved_date = None
+                    if new_status == "Closed":
+                        resolved_date = st.date_input("Resolved Date (PKST)", now_pkt.date())
+
+                    comments = st.text_area("Comments")
+                    update_submitted = st.form_submit_button("Update Ticket")
+
+                    has_changes = (
+                            new_status != ticket_data["Status"] or
+                            new_priority != ticket_data["Priority"] or
+                            comments.strip() != ""
+                    )
+
+                    if update_submitted and not has_changes:
+                        st.warning("⚠️ No changes detected for this ticket.")
+
+                    if update_submitted and has_changes:
+                        with st.spinner("Updating ticket in Notion..."):
+                            try:
+                                page_id = ticket_data["page_id"]
+                                success = update_ticket_in_notion(
+                                    page_id=page_id,
+                                    issue=ticket_data["Issue"],
+                                    status=new_status,
+                                    priority=new_priority,
+                                    resolved_date=resolved_date,
+                                    comments=comments,
+                                    old_status=ticket_data["Status"],
+                                    old_priority=ticket_data["Priority"],
+                                    ticket_id=ticket_data["ID"],
+                                    creator_name=ticket_data.get("Created By", "Unknown"),
+                                    assigned_name=ticket_data.get("Assigned To", "Unknown"),
+                                    new_notify=new_notify,
+                                    old_notify=ticket_data["Notify"]
+                                )
+
+                                if success:
+                                    st.success(f"✅ Ticket **{selected_ticket}** updated successfully!")
+                                    st.session_state.df = fetch_tickets_from_notion()
+                                    st.session_state.original_df = st.session_state.df.copy()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to update the ticket.")
+
+                            except Exception as e:
+                                st.error(f"🚨 Error updating ticket: {e}")
+
+    st.divider()
 
     if "df" not in st.session_state:
         st.session_state.df = fetch_tickets_from_notion()
         st.session_state.original_df = st.session_state.df.copy()
 
-    temp_df = st.session_state.df.copy()
-    active_tickets = temp_df[temp_df["Status"].isin(["Open", "In Progress"])]
+    df = st.session_state.df.copy()
+    df["Month"] = df["Date Submitted"].dt.strftime("%B")
+    unique_months = sorted(df["Month"].unique().tolist())
+    months = ["All"] + unique_months
 
-    if active_tickets.empty:
-        st.info("No active tickets available to update.")
+    current_month = datetime.datetime.now(pkt).strftime("%B")
+    default_index = months.index("All") if current_month in months else 0
+
+    selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
+
+    if selected_month == "All":
+        filtered_df = df.copy()
     else:
-        ticket_options = active_tickets["ID"].tolist()
-        selected_ticket = st.selectbox("Select Ticket to Update", ticket_options)
+        filtered_df = df[df["Month"] == selected_month].copy()
 
-        if selected_ticket:
-            ticket_data = active_tickets[active_tickets["ID"] == selected_ticket].iloc[0]
+    st.subheader(f"📊 Showing tickets for: **{selected_month}**")
 
-            st.markdown(f"<p style='font-size: 16px;'>📄 Issue: {ticket_data['Issue']}</p>", unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size: 16px;'>📊 Current Status: {ticket_data['Status']}</p>",
-                        unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size: 16px;'>⏰ Current Priority: {ticket_data['Priority']}</p>",
-                        unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size: 16px;'>➕ Created By: {ticket_data['Created By']}</p>",
-                        unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size: 16px;'>📕 Assigned To: {ticket_data['Assigned To']}</p>",
-                        unsafe_allow_html=True)
+    normal_count = len(filtered_df[filtered_df["Ticket Type"] == "Normal"])
+    personal_count = len(filtered_df[filtered_df["Ticket Type"] == "Personal"])
 
-            new_notify = ticket_data["Notify"]
-            if st.session_state.authenticated:
-                new_notify = st.selectbox("Update Notify", ["Yes", "No"],
-                                          index=["Yes", "No"].index(ticket_data["Notify"]))
+    st.metric(label="Total Normal Tickets Found", value=normal_count)
+    st.metric(label="Total Personal Tickets Found", value=personal_count)
 
-            with st.form("update_ticket_form"):
-                new_status = st.selectbox("Update Status", ["Open", "In Progress", "Closed"],
-                                          index=["Open", "In Progress", "Closed"].index(ticket_data["Status"]))
-                new_priority = st.selectbox("Update Priority", ["High", "Medium", "Low"],
-                                            index=["High", "Medium", "Low"].index(ticket_data["Priority"]))
+    if filtered_df.empty:
+        st.info("No tickets found for the selected month.")
+        st.stop()
 
-                resolved_date = None
-                if new_status == "Closed":
-                    resolved_date = st.date_input("Resolved Date (PKST)", now_pkt.date())
+    active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
+    personal_active = active_df[active_df["Ticket Type"] == "Personal"]
+    active_df = active_df[active_df["Ticket Type"] == "Normal"]
 
-                comments = st.text_area("Comments")
-                update_submitted = st.form_submit_button("Update Ticket")
+    closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
+    personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
+    closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
 
-                has_changes = (
-                        new_status != ticket_data["Status"] or
-                        new_priority != ticket_data["Priority"] or
-                        comments.strip() != ""
-                )
+    st.header("🟢 Active Tickets")
 
-                if update_submitted and not has_changes:
-                    st.warning("⚠️ No changes detected for this ticket.")
-
-                if update_submitted and has_changes:
-                    with st.spinner("Updating ticket in Notion..."):
-                        try:
-                            page_id = ticket_data["page_id"]
-                            success = update_ticket_in_notion(
-                                page_id=page_id,
-                                issue=ticket_data["Issue"],
-                                status=new_status,
-                                priority=new_priority,
-                                resolved_date=resolved_date,
-                                comments=comments,
-                                old_status=ticket_data["Status"],
-                                old_priority=ticket_data["Priority"],
-                                ticket_id=ticket_data["ID"],
-                                creator_name=ticket_data.get("Created By", "Unknown"),
-                                assigned_name=ticket_data.get("Assigned To", "Unknown"),
-                                new_notify=new_notify,
-                                old_notify=ticket_data["Notify"]
-                            )
-
-                            if success:
-                                st.success(f"✅ Ticket **{selected_ticket}** updated successfully!")
-                                st.session_state.df = fetch_tickets_from_notion()
-                                st.session_state.original_df = st.session_state.df.copy()
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to update the ticket.")
-
-                        except Exception as e:
-                            st.error(f"🚨 Error updating ticket: {e}")
-
-st.divider()
-
-if "df" not in st.session_state:
-    st.session_state.df = fetch_tickets_from_notion()
-    st.session_state.original_df = st.session_state.df.copy()
-
-df = st.session_state.df.copy()
-df["Month"] = df["Date Submitted"].dt.strftime("%B")
-unique_months = sorted(df["Month"].unique().tolist())
-months = ["All"] + unique_months
-
-current_month = datetime.datetime.now(pkt).strftime("%B")
-default_index = months.index("All") if current_month in months else 0
-
-selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
-
-if selected_month == "All":
-    filtered_df = df.copy()
-else:
-    filtered_df = df[df["Month"] == selected_month].copy()
-
-st.subheader(f"📊 Showing tickets for: **{selected_month}**")
-
-normal_count = len(filtered_df[filtered_df["Ticket Type"] == "Normal"])
-personal_count = len(filtered_df[filtered_df["Ticket Type"] == "Personal"])
-
-st.metric(label="Total Normal Tickets Found", value=normal_count)
-st.metric(label="Total Personal Tickets Found", value=personal_count)
-
-if filtered_df.empty:
-    st.info("No tickets found for the selected month.")
-    st.stop()
-
-active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
-personal_active = active_df[active_df["Ticket Type"] == "Personal"]
-active_df = active_df[active_df["Ticket Type"] == "Normal"]
-
-closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
-personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
-closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
-
-st.header("🟢 Active Tickets")
-
-if selected_month == "All":
-    st.metric(
-        label="Number of active tickets",
-        value=f"{len(active_df):,}"
-    )
-else:
-    st.metric(
-        label=f"Number of active tickets this month ({selected_month})",
-        value=f"{len(active_df):,}"
-    )
-
-st.metric(label="Number of active personal tickets", value=len(personal_active))
-
-if st.session_state.authenticated:
-    st.info(
-        "You can edit tickets by double-clicking a cell. Click 'Save Changes to Notion' "
-        "to sync your edits. You can also sort columns by clicking headers.",
-        icon="✍️",
-    )
-
-display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
-
-disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To",
-                    "Ticket Type"]
-if not st.session_state.authenticated:
-    disabled_columns = list(display_active_df.columns)
-
-edited_active_df = st.data_editor(
-    display_active_df,
-    width="stretch",
-    hide_index=True,
-    key="active_editor",
-    column_config={
-        "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
-                                                   required=True),
-        "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
-        "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
-        "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
-    },
-    disabled=disabled_columns,
-)
-
-if st.session_state.authenticated and not edited_active_df.equals(display_active_df):
-    if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
-        with st.spinner("Saving changes to Notion..."):
-            success_count, error_count = 0, 0
-
-            for idx in edited_active_df.index:
-                original_row = display_active_df.loc[idx]
-                edited_row = edited_active_df.loc[idx]
-
-                if not original_row.equals(edited_row):
-                    page_id = active_df.loc[idx, "page_id"]
-                    success = update_ticket_in_notion(
-                        page_id=page_id,
-                        issue=edited_row["Issue"],
-                        status=edited_row["Status"],
-                        priority=edited_row["Priority"],
-                        resolved_date=edited_row["Resolved Date"],
-                        comments=edited_row["Comments"],
-                        old_status=original_row["Status"],
-                        old_priority=original_row["Priority"],
-                        ticket_id=original_row["ID"],
-                        creator_name=original_row.get("Created By", "Unknown"),
-                        assigned_name=original_row.get("Assigned To", "Unknown"),
-                    )
-
-                    if success:
-                        success_count += 1
-                    else:
-                        error_count += 1
-
-            if success_count > 0:
-                st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
-            if error_count > 0:
-                st.error(f"❌ {error_count} ticket(s) failed to update.")
-
-            st.session_state.df = fetch_tickets_from_notion()
-            st.session_state.original_df = st.session_state.df.copy()
-            st.rerun()
-
-st.divider()
-
-st.header("📦 Closed Tickets")
-
-if selected_month == "All":
-    st.metric(
-        label="Number of closed tickets",
-        value=f"{len(closed_df):,}"
-    )
-else:
-    st.metric(
-        label=f"Number of closed tickets this month ({selected_month})",
-        value=f"{len(closed_df):,}"
-    )
-
-st.metric(label="Number of closed personal tickets", value=len(personal_closed))
-
-if closed_df.empty:
-    st.info("No closed tickets for the selected month.")
-else:
-    with st.expander("View Closed Tickets", expanded=False):
-        display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
-
-        disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By",
-                                   "Assigned To", "Ticket Type"]
-        if not st.session_state.authenticated:
-            disabled_closed_columns = list(display_closed_df.columns)
-
-        edited_closed_df = st.data_editor(
-            display_closed_df,
-            width="stretch",
-            hide_index=True,
-            key="closed_editor",
-            column_config={
-                "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
-                                                           required=True),
-                "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
-                                                             required=True),
-                "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
-                "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
-            },
-            disabled=disabled_closed_columns,
+    if selected_month == "All":
+        st.metric(
+            label="Number of active tickets",
+            value=f"{len(active_df):,}"
+        )
+    else:
+        st.metric(
+            label=f"Number of active tickets this month ({selected_month})",
+            value=f"{len(active_df):,}"
         )
 
-        if st.session_state.authenticated and not edited_closed_df.equals(display_closed_df):
-            if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
-                with st.spinner("Saving changes to Notion..."):
-                    success_count, error_count = 0, 0
+    st.metric(label="Number of active personal tickets", value=len(personal_active))
 
-                    for idx in edited_closed_df.index:
-                        original_row = display_closed_df.loc[idx]
-                        edited_row = edited_closed_df.loc[idx]
+    if st.session_state.get("admin_authenticated", False):
+        st.info(
+            "You can edit tickets by double-clicking a cell. Click 'Save Changes to Notion' "
+            "to sync your edits. You can also sort columns by clicking headers.",
+            icon="✍️",
+        )
 
-                        if not original_row.equals(edited_row):
-                            page_id = closed_df.loc[idx, "page_id"]
-                            success = update_ticket_in_notion(
-                                page_id=page_id,
-                                issue=edited_row["Issue"],
-                                status=edited_row["Status"],
-                                priority=edited_row["Priority"],
-                                resolved_date=edited_row["Resolved Date"],
-                                comments=edited_row["Comments"],
-                                old_status=original_row["Status"],
-                                old_priority=original_row["Priority"],
-                                ticket_id=original_row["ID"],
-                                creator_name=original_row.get("Created By", "Unknown"),
-                                assigned_name=original_row.get("Assigned To", "Unknown"),
-                            )
+    display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
 
-                            if success:
-                                success_count += 1
-                            else:
-                                error_count += 1
+    disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To",
+                        "Ticket Type"]
+    if not st.session_state.get("admin_authenticated", False):
+        disabled_columns = list(display_active_df.columns)
 
-                    if success_count > 0:
-                        st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
-                    if error_count > 0:
-                        st.error(f"❌ {error_count} ticket(s) failed to update.")
+    edited_active_df = st.data_editor(
+        display_active_df,
+        width="stretch",
+        hide_index=True,
+        key="active_editor",
+        column_config={
+            "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                       required=True),
+            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
+            "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+            "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
+        },
+        disabled=disabled_columns,
+    )
 
-                    st.session_state.df = fetch_tickets_from_notion()
-                    st.session_state.original_df = st.session_state.df.copy()
-                    st.rerun()
+    if st.session_state.get("admin_authenticated", False) and not edited_active_df.equals(display_active_df):
+        if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
+            with st.spinner("Saving changes to Notion..."):
+                success_count, error_count = 0, 0
+
+                for idx in edited_active_df.index:
+                    original_row = display_active_df.loc[idx]
+                    edited_row = edited_active_df.loc[idx]
+
+                    if not original_row.equals(edited_row):
+                        page_id = active_df.loc[idx, "page_id"]
+                        success = update_ticket_in_notion(
+                            page_id=page_id,
+                            issue=edited_row["Issue"],
+                            status=edited_row["Status"],
+                            priority=edited_row["Priority"],
+                            resolved_date=edited_row["Resolved Date"],
+                            comments=edited_row["Comments"],
+                            old_status=original_row["Status"],
+                            old_priority=original_row["Priority"],
+                            ticket_id=original_row["ID"],
+                            creator_name=original_row.get("Created By", "Unknown"),
+                            assigned_name=original_row.get("Assigned To", "Unknown"),
+                        )
+
+                        if success:
+                            success_count += 1
+                        else:
+                            error_count += 1
+
+                if success_count > 0:
+                    st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
+                if error_count > 0:
+                    st.error(f"❌ {error_count} ticket(s) failed to update.")
+
+                st.session_state.df = fetch_tickets_from_notion()
+                st.session_state.original_df = st.session_state.df.copy()
+                st.rerun()
+
+    st.divider()
+
+    st.header("📦 Closed Tickets")
+
+    if selected_month == "All":
+        st.metric(
+            label="Number of closed tickets",
+            value=f"{len(closed_df):,}"
+        )
+    else:
+        st.metric(
+            label=f"Number of closed tickets this month ({selected_month})",
+            value=f"{len(closed_df):,}"
+        )
+
+    st.metric(label="Number of closed personal tickets", value=len(personal_closed))
+
+    if closed_df.empty:
+        st.info("No closed tickets for the selected month.")
+    else:
+        with st.expander("View Closed Tickets", expanded=False):
+            display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
+
+            disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By",
+                                       "Assigned To", "Ticket Type"]
+            if not st.session_state.get("admin_authenticated", False):
+                disabled_closed_columns = list(display_closed_df.columns)
+
+            edited_closed_df = st.data_editor(
+                display_closed_df,
+                width="stretch",
+                hide_index=True,
+                key="closed_editor",
+                column_config={
+                    "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                               required=True),
+                    "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
+                                                                 required=True),
+                    "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+                    "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
+                },
+                disabled=disabled_closed_columns,
+            )
+
+            if st.session_state.get("admin_authenticated", False) and not edited_closed_df.equals(display_closed_df):
+                if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
+                    with st.spinner("Saving changes to Notion..."):
+                        success_count, error_count = 0, 0
+
+                        for idx in edited_closed_df.index:
+                            original_row = display_closed_df.loc[idx]
+                            edited_row = edited_closed_df.loc[idx]
+
+                            if not original_row.equals(edited_row):
+                                page_id = closed_df.loc[idx, "page_id"]
+                                success = update_ticket_in_notion(
+                                    page_id=page_id,
+                                    issue=edited_row["Issue"],
+                                    status=edited_row["Status"],
+                                    priority=edited_row["Priority"],
+                                    resolved_date=edited_row["Resolved Date"],
+                                    comments=edited_row["Comments"],
+                                    old_status=original_row["Status"],
+                                    old_priority=original_row["Priority"],
+                                    ticket_id=original_row["ID"],
+                                    creator_name=original_row.get("Created By", "Unknown"),
+                                    assigned_name=original_row.get("Assigned To", "Unknown"),
+                                )
+
+                                if success:
+                                    success_count += 1
+                                else:
+                                    error_count += 1
+
+                        if success_count > 0:
+                            st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
+                        if error_count > 0:
+                            st.error(f"❌ {error_count} ticket(s) failed to update.")
+
+                        st.session_state.df = fetch_tickets_from_notion()
+                        st.session_state.original_df = st.session_state.df.copy()
+                        st.rerun()
+
+
+if __name__ == "__main__":
+    main()
