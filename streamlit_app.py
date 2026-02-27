@@ -22,14 +22,6 @@ def setup_page():
         initial_sidebar_state="collapsed"
     )
 
-    # hide_st_style = """
-    # <style>
-    #     #MainMenu {visibility: hidden;}
-    #     header {visibility: hidden;}
-    # </style>
-    # """
-    # st.markdown(hide_st_style, unsafe_allow_html=True)
-
 
 def hash_password(password):
     """Hash password using SHA256"""
@@ -86,7 +78,6 @@ class CookieAuth:
             token = cookies[self.cookie_name]
 
             if self.verify_token(token):
-                # Valid cookie found - auto login
                 st.session_state.authentication_status = True
                 st.session_state.username = self.username
                 st.session_state.name = self.user_name
@@ -124,9 +115,7 @@ def login_page(auth):
         submit = st.form_submit_button("Login")
 
         if submit:
-            # Check credentials
             if username == auth.username and auth.verify_password(password):
-
                 auth.set_auth_cookie()
                 st.success("✅ Login successful!")
                 time.sleep(0.5)
@@ -200,7 +189,6 @@ def send_files_to_slack(user_id, files, ticket_id, issue):
         if not files:
             return True
 
-        # Send initial message
         intro_message = f"📎 *Files attached to Ticket {ticket_id}*\n*Issue:* {issue}\n"
         client.chat_postMessage(channel=user_id, text=intro_message)
 
@@ -350,7 +338,6 @@ Your ticket has been submitted and assigned. You'll be notified of any updates."
 def get_user_details(name, assigned):
     """Get sender and receiver email addresses and Slack IDs."""
     try:
-        # Get email addresses from name_all dictionary
         sender_email = name_all.get(name)
         receiver_email = name_all.get(assigned)
 
@@ -431,7 +418,8 @@ def create_ticket_in_notion(ticket_id, issue, status, priority, date_submitted, 
 
 
 def send_ticket_update_notifications(ticket_id, old_status, new_status, old_priority, new_priority, issue,
-                                     creator_name, assigned_name, comments, resolved_date=None):
+                                     creator_name, assigned_name, comments, resolved_date=None,
+                                     uploaded_files=None):
     """Send Slack notifications when a ticket is updated."""
     try:
         pkt = pytz.timezone("Asia/Karachi")
@@ -448,6 +436,8 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             changes.append(f"*Resolved Time (PKST):* {formatted_time}")
         if comments:
             changes.append(f"*Comments:* {comments}")
+        if uploaded_files:
+            changes.append(f"*📎 Attachments:* {len(uploaded_files)} file(s)")
 
         if not changes:
             return
@@ -464,6 +454,9 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 {changes_text}
 """
             send_dm(user_details['receiver_id'], assigned_message)
+            if uploaded_files:
+                send_files_to_slack(user_details['receiver_id'], uploaded_files, ticket_id, issue)
+
             print(f"✅ Update notification sent to {assigned_name} ({user_details['receiver_email']})")
 
         if user_details['sender_id'] and user_details['sender_id'] != user_details['receiver_id']:
@@ -475,6 +468,14 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 {changes_text}
 """
             send_dm(user_details['sender_id'], creator_message)
+
+            # Send files to the creator as well
+            if uploaded_files:
+                # Reset file pointers before re-sending
+                for f in uploaded_files:
+                    f.seek(0)
+                send_files_to_slack(user_details['sender_id'], uploaded_files, ticket_id, issue)
+
             print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
 
     except Exception as e:
@@ -483,7 +484,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 
 def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, comments, old_status=None,
                             old_priority=None, ticket_id=None, creator_name=None, assigned_name=None, new_notify=None,
-                            old_notify=None):
+                            old_notify=None, uploaded_files=None):
     """Update an existing ticket in Notion and send notifications."""
     try:
         properties = {
@@ -533,6 +534,7 @@ def update_ticket_in_notion(page_id, issue, status, priority, resolved_date, com
                 assigned_name,
                 comments,
                 formatted_resolved_date,
+                uploaded_files=uploaded_files,
             )
 
         if new_notify != old_notify and new_notify:
@@ -549,22 +551,18 @@ def main():
     """Main application entry point"""
     setup_page()
 
-    # Initialize authentication
     auth = CookieAuth()
 
-    # Check authentication status
     if not auth.is_authenticated():
         with st.spinner("🔄 Initializing secure session..."):
             time.sleep(1.5)
         login_page(auth)
         return
 
-    # Main application UI
     st.title(f"🎫 Support Tickets for Blink Digitally")
     st.write(f"Welcome, **{st.session_state.get('name')}**!")
     st.write("Use this app to submit in any publishing updates, republication details, or reminders.")
 
-    # Logout button in sidebar
     with st.sidebar:
         st.header(f"👤 {st.session_state.get('name')}")
         if st.button("🚪 Logout"):
@@ -757,47 +755,77 @@ def main():
                         resolved_date = st.date_input("Resolved Date (PKST)", now_pkt.date())
 
                     comments = st.text_area("Comments")
+
+                    # ── NEW: File upload for updates ──────────────────────────
+                    update_uploaded_files = st.file_uploader(
+                        "Attach files (optional)",
+                        accept_multiple_files=True,
+                        help="Attach images, PDFs, documents, etc. Files will be sent via Slack.",
+                        key="update_file_uploader"
+                    )
+
+                    if update_uploaded_files:
+                        total_update_size = sum(f.size for f in update_uploaded_files)
+                        max_size = 50 * 1024 * 1024
+                        st.info(
+                            f"📎 {len(update_uploaded_files)} file(s) selected "
+                            f"({total_update_size / 1024 / 1024:.2f} MB)"
+                        )
+                        if total_update_size > max_size:
+                            st.warning("⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
+                    # ─────────────────────────────────────────────────────────
+
                     update_submitted = st.form_submit_button("Update Ticket")
 
                     has_changes = (
                             new_status != ticket_data["Status"] or
                             new_priority != ticket_data["Priority"] or
-                            comments.strip() != ""
+                            comments.strip() != "" or
+                            bool(update_uploaded_files)   # treat new files as a change
                     )
 
                     if update_submitted and not has_changes:
                         st.warning("⚠️ No changes detected for this ticket.")
 
                     if update_submitted and has_changes:
-                        with st.spinner("Updating ticket in Notion..."):
-                            try:
-                                page_id = ticket_data["page_id"]
-                                success = update_ticket_in_notion(
-                                    page_id=page_id,
-                                    issue=ticket_data["Issue"],
-                                    status=new_status,
-                                    priority=new_priority,
-                                    resolved_date=resolved_date,
-                                    comments=comments,
-                                    old_status=ticket_data["Status"],
-                                    old_priority=ticket_data["Priority"],
-                                    ticket_id=ticket_data["ID"],
-                                    creator_name=ticket_data.get("Created By", "Unknown"),
-                                    assigned_name=ticket_data.get("Assigned To", "Unknown"),
-                                    new_notify=new_notify,
-                                    old_notify=ticket_data["Notify"]
-                                )
+                        # Validate file size before proceeding
+                        if update_uploaded_files and sum(f.size for f in update_uploaded_files) > 50 * 1024 * 1024:
+                            st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
+                        else:
+                            with st.spinner("Updating ticket in Notion..."):
+                                try:
+                                    page_id = ticket_data["page_id"]
+                                    success = update_ticket_in_notion(
+                                        page_id=page_id,
+                                        issue=ticket_data["Issue"],
+                                        status=new_status,
+                                        priority=new_priority,
+                                        resolved_date=resolved_date,
+                                        comments=comments,
+                                        old_status=ticket_data["Status"],
+                                        old_priority=ticket_data["Priority"],
+                                        ticket_id=ticket_data["ID"],
+                                        creator_name=ticket_data.get("Created By", "Unknown"),
+                                        assigned_name=ticket_data.get("Assigned To", "Unknown"),
+                                        new_notify=new_notify,
+                                        old_notify=ticket_data["Notify"],
+                                        uploaded_files=update_uploaded_files if update_uploaded_files else None,
+                                    )
 
-                                if success:
-                                    st.success(f"✅ Ticket **{selected_ticket}** updated successfully!")
-                                    st.session_state.df = fetch_tickets_from_notion()
-                                    st.session_state.original_df = st.session_state.df.copy()
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Failed to update the ticket.")
+                                    if success:
+                                        st.success(f"✅ Ticket **{selected_ticket}** updated successfully!")
+                                        if update_uploaded_files:
+                                            st.success(
+                                                f"📎 {len(update_uploaded_files)} file(s) sent via Slack."
+                                            )
+                                        st.session_state.df = fetch_tickets_from_notion()
+                                        st.session_state.original_df = st.session_state.df.copy()
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Failed to update the ticket.")
 
-                            except Exception as e:
-                                st.error(f"🚨 Error updating ticket: {e}")
+                                except Exception as e:
+                                    st.error(f"🚨 Error updating ticket: {e}")
 
     st.divider()
 
