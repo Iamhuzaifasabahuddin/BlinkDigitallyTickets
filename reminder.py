@@ -204,7 +204,7 @@ if __name__ == '__main__':
         printed_lines = "\n\n\n".join([f"*{t}*: {i}" for t, i in zip(tickets_2, printings)])
         message = (
             f":printer: *Printing Reminder for:* *<@{hexz_id}>*\n\n"
-            f"Pending Prints:\n\n"
+            f"Pending Prints ({len(tickets_2)}):\n\n"
             f"{printed_lines}\n\n"
 
         )
