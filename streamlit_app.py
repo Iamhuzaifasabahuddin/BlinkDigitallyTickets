@@ -466,12 +466,10 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 """
             send_dm(user_details['sender_id'], creator_message)
 
-            # Send files to the creator as well
-            if uploaded_files:
-                # Reset file pointers before re-sending
-                for f in uploaded_files:
-                    f.seek(0)
-                send_files_to_slack(user_details['sender_id'], uploaded_files, ticket_id, issue)
+            # if uploaded_files:
+            #     for f in uploaded_files:
+            #         f.seek(0)
+            #     send_files_to_slack(user_details['sender_id'], uploaded_files, ticket_id, issue)
 
             print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
 
@@ -647,8 +645,8 @@ def main():
                     st.error("⚠️ Please describe the issue before submitting.")
                 elif not name or not assigned:
                     st.warning("⚠️ Please select both 'Created By' and 'Assigned To' before submitting.")
-                elif uploaded_files and sum(f.size for f in uploaded_files) > 50 * 1024 * 1024:
-                    st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
+                elif uploaded_files and sum(f.size for f in uploaded_files) > 200 * 1024 * 1024:
+                    st.error("⚠️ Total file size exceeds 200 MB. Please reduce file size before submitting.")
                 else:
                     try:
                         with st.spinner("Fetching latest ticket from Notion..."):
