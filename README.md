@@ -33,6 +33,7 @@ BlinkDigitally Ticket Management & Reminder System is a Streamlit-based internal
 
 ## Key Features
 
+*Custom Authenticator & Cookie based login
 * Create, update, assign, and resolve tickets via a Streamlit UI
 * Centralized ticket storage in a Notion database (searchable, auditable, canonical)
 * Real-time Slack notifications on ticket events:
