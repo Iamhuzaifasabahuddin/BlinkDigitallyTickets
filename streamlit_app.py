@@ -193,17 +193,14 @@ def send_files_to_slack(user_id, files, ticket_id, issue):
         client.chat_postMessage(channel=user_id, text=intro_message)
 
         for uploaded_file in files:
-            file_content = uploaded_file.read()
             conversation = client.conversations_open(users=user_id)
             channel_id = conversation['channel']['id']
 
             response = client.files_upload_v2(
                 channel=channel_id,
-                file=file_content,
+                file=uploaded_file,
                 filename=uploaded_file.name
             )
-
-            uploaded_file.seek(0)
 
         print(f"✅ {len(files)} file(s) sent to Slack user {user_id}")
         return True
@@ -631,12 +628,12 @@ def main():
 
             if uploaded_files:
                 total_size = sum(f.size for f in uploaded_files)
-                max_size = 50 * 1024 * 1024
+                max_size = 200 * 1024 * 1024
 
                 st.info(f"📎 {len(uploaded_files)} file(s) selected ({total_size / 1024 / 1024:.2f} MB)")
 
                 if total_size > max_size:
-                    st.warning(f"⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
+                    st.warning(f"⚠️ Total file size exceeds 200 MB limit. Please reduce file size.")
 
             today = st.date_input("Date (PKST)", now_pkt.date())
             priority = st.selectbox("Priority", ["High", "Medium", "Low"])
