@@ -296,7 +296,7 @@ def send_ticket_notifications(ticket_id, issue, priority, status, date, time, us
 *📅 Created Date (PKST):* {date}
 *⌛ Created Time (PKST):* {time}
 *➕ Created By:* {creator_name}
-*❓ Issue:* {issue}
+*❓ Issue:* \n{issue}
 
 Please review and update the ticket status accordingly."""
             send_dm(user_details['receiver_id'], assigned_message)
@@ -318,7 +318,7 @@ Please review and update the ticket status accordingly."""
 *📅 Created Date (PKST):* {date}
 *⌛ Created Time (PKST):* {time}
 *📕 Assigned To:* {assigned_name}
-*❓ Issue:* {issue}{files_text}
+*❓ Issue:* \n{issue}{files_text}
 
 Your ticket has been submitted and assigned. You'll be notified of any updates."""
             send_dm(user_details['sender_id'], creator_message)
@@ -446,7 +446,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             assigned_message = f"""🔔 *Ticket Updated*
 *🆔 Ticket ID:* {ticket_id}
 *➕ Created By:* {creator_name}
-*❓ Issue:* {issue}
+*❓ Issue:* \n{issue}
 *✏ Changes:*
 {changes_text}
 """
@@ -460,7 +460,7 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
             creator_message = f"""🔔 *Your Ticket Was Updated*
 *🆔 Ticket ID:* {ticket_id}
 *📕 Assigned To:* {assigned_name}
-*❓ Issue:* {issue}
+*❓ Issue:* \n{issue}
 *✏ Changes:*
 {changes_text}
 """
