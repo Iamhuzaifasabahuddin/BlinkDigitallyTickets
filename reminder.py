@@ -16,53 +16,118 @@ DATABASE_ID = os.environ['NOTION_DATABASE_ID']
 
 
 def fetch_tickets_from_notion():
-    """Fetch all tickets from Notion database with pagination."""
+    """Fetch only open/in-progress tickets from Notion database with pagination."""
     try:
         tickets = []
         has_more = True
         start_cursor = None
+
         while has_more:
+
+            query_params = {
+                "data_source_id": DATABASE_ID,
+                "sorts": [
+                    {
+                        "timestamp": "created_time",
+                        "direction": "descending"
+                    }
+                ],
+                "filter": {
+                    "or": [
+                        {
+                            "property": "Status",
+                            "select": {
+                                "equals": "Open"
+                            }
+                        },
+                        {
+                            "property": "Status",
+                            "select": {
+                                "equals": "In Progress"
+                            }
+                        }
+                    ]
+                }
+            }
+
             if start_cursor:
-                results = notion.data_sources.query(
-                    data_source_id=DATABASE_ID,
-                    start_cursor=start_cursor,
-                    sorts=[{"timestamp": "created_time", "direction": "descending"}]
-                )
-            else:
-                results = notion.data_sources.query(data_source_id=DATABASE_ID,
-                                                    sorts=[{"timestamp": "created_time", "direction": "descending"}])
+                query_params["start_cursor"] = start_cursor
+
+            results = notion.data_sources.query(**query_params)
 
             for page in results["results"]:
                 props = page["properties"]
 
-                ticket_id = props["ID"]["title"][0]["text"]["content"] if props["ID"]["title"] else ""
+                ticket_id = (
+                    props["ID"]["title"][0]["text"]["content"]
+                    if props["ID"]["title"]
+                    else ""
+                )
+
                 if not ticket_id or "-" not in ticket_id:
                     ticket_id = "TICKET-0001"
 
                 ticket = {
                     "page_id": page["id"],
                     "ID": ticket_id,
-                    "Issue": props["Issue"]["rich_text"][0]["text"]["content"] if props["Issue"]["rich_text"] else "",
-                    "Status": props["Status"]["select"]["name"] if props["Status"]["select"] else "Open",
-                    "Priority": props["Priority"]["select"]["name"] if props["Priority"]["select"] else "Medium",
-                    "Date Submitted": props["Date Submitted"]["date"]["start"] if props["Date Submitted"][
-                        "date"] else "",
-                    "Submitted Time": props["Submitted Time"]["rich_text"][0]["text"]["content"] if
-                    props["Submitted Time"]["rich_text"] else "",
-                    "Created By": props["Created By"]["select"]["name"] if props["Created By"]["select"][
-                        "name"] else "",
-                    "Assigned To": props["Assigned To"]["select"]["name"] if props["Assigned To"]["select"][
-                        "name"] else "",
-                    "Resolved Date": props["Resolved Date"]["date"]["start"] if props.get("Resolved Date") and
-                                                                                props["Resolved Date"][
-                                                                                    "date"] else None,
-                    "Resolved Time": props["Resolved Time"]["rich_text"][0]["text"]["content"] if
-                    props["Resolved Time"]["rich_text"] else "",
-                    "Comments": props["Comments"]["rich_text"][0]["text"]["content"] if props["Comments"][
-                        "rich_text"] else "",
-                    "Notify": props["Notify"]["rich_text"][0]["text"]["content"] if props["Notify"][
-                        "rich_text"] else "",
+                    "Issue": (
+                        props["Issue"]["rich_text"][0]["text"]["content"]
+                        if props["Issue"]["rich_text"]
+                        else ""
+                    ),
+                    "Status": (
+                        props["Status"]["select"]["name"]
+                        if props["Status"]["select"]
+                        else "Open"
+                    ),
+                    "Priority": (
+                        props["Priority"]["select"]["name"]
+                        if props["Priority"]["select"]
+                        else "Medium"
+                    ),
+                    "Date Submitted": (
+                        props["Date Submitted"]["date"]["start"]
+                        if props["Date Submitted"]["date"]
+                        else ""
+                    ),
+                    "Submitted Time": (
+                        props["Submitted Time"]["rich_text"][0]["text"]["content"]
+                        if props["Submitted Time"]["rich_text"]
+                        else ""
+                    ),
+                    "Created By": (
+                        props["Created By"]["select"]["name"]
+                        if props["Created By"]["select"]
+                        else ""
+                    ),
+                    "Assigned To": (
+                        props["Assigned To"]["select"]["name"]
+                        if props["Assigned To"]["select"]
+                        else ""
+                    ),
+                    "Resolved Date": (
+                        props["Resolved Date"]["date"]["start"]
+                        if props.get("Resolved Date")
+                        and props["Resolved Date"]["date"]
+                        else None
+                    ),
+                    "Resolved Time": (
+                        props["Resolved Time"]["rich_text"][0]["text"]["content"]
+                        if props["Resolved Time"]["rich_text"]
+                        else ""
+                    ),
+                    "Comments": (
+                        props["Comments"]["rich_text"][0]["text"]["content"]
+                        if props["Comments"]["rich_text"]
+                        else ""
+                    ),
+                    "Notify": (
+                        props["Notify"]["rich_text"][0]["text"]["content"]
+                        if props["Notify"]["rich_text"]
+                        else ""
+                    ),
                 }
+
                 tickets.append(ticket)
 
             has_more = results.get("has_more", False)
@@ -72,42 +137,78 @@ def fetch_tickets_from_notion():
 
         if not df.empty:
             if "Date Submitted" in df.columns:
-                df["Date Submitted"] = pd.to_datetime(df["Date Submitted"], format="%Y-%m-%d", errors='coerce')
-            if "Resolved Date" in df.columns:
-                df["Resolved Date"] = pd.to_datetime(df["Resolved Date"], format="%Y-%m-%d", errors='coerce')
+                df["Date Submitted"] = pd.to_datetime(
+                    df["Date Submitted"],
+                    format="%Y-%m-%d",
+                    errors="coerce"
+                )
 
-        df = df[df["Status"].isin(["Open", "In Progress"])]
+            if "Resolved Date" in df.columns:
+                df["Resolved Date"] = pd.to_datetime(
+                    df["Resolved Date"],
+                    format="%Y-%m-%d",
+                    errors="coerce"
+                )
 
         name_list_assigned = df["Assigned To"].unique().tolist()
         name_list_created = df["Created By"].unique().tolist()
+
         combined = list(set(name_list_assigned + name_list_created))
 
         ticket_list = defaultdict(list)
         printed_list = defaultdict(list)
         personal_list = defaultdict(list)
+
         for name in combined:
+
             tickets = df[
-                ((df["Created By"] == name) | (df["Assigned To"] == name)) &
-                (df["Created By"] != df["Assigned To"])
-                ]
+                (
+                    (df["Created By"] == name)
+                    | (df["Assigned To"] == name)
+                )
+                & (df["Created By"] != df["Assigned To"])
+            ]
 
             printed = tickets.copy()
-            tickets = tickets[~tickets["Issue"].str.contains("Printed|Complimentary|Proof",
-                                                             case=False, na=False)]
-            tickets = tickets[tickets["Notify"] == "Yes"]
-            ticket_list[name].append(tickets["ID"].tolist())
-            ticket_list[name].append(tickets["Issue"].astype(str).tolist())
 
-            printed = printed[printed["Issue"].str.contains("Printed|Complimentary|Proof", case=False, na=False)]
+            tickets = tickets[
+                ~tickets["Issue"].str.contains(
+                    "Printed|Complimentary|Proof",
+                    case=False,
+                    na=False
+                )
+            ]
+
+            tickets = tickets[tickets["Notify"] == "Yes"]
+
+            ticket_list[name].append(tickets["ID"].tolist())
+            ticket_list[name].append(
+                tickets["Issue"].astype(str).tolist()
+            )
+
+            printed = printed[
+                printed["Issue"].str.contains(
+                    "Printed|Complimentary|Proof",
+                    case=False,
+                    na=False
+                )
+            ]
+
             printed_list[name].append(printed["ID"].tolist())
-            printed_list[name].append(printed["Issue"].astype(str).tolist())
+            printed_list[name].append(
+                printed["Issue"].astype(str).tolist()
+            )
 
             personal = df[df["Created By"] == df["Assigned To"]]
             personal = personal[personal["Created By"] == name]
+
             personal_list[name].append(personal["ID"].tolist())
-            personal_list[name].append(personal["Issue"].astype(str).tolist())
+            personal_list[name].append(
+                personal["Issue"].astype(str).tolist()
+            )
 
         return combined, ticket_list, printed_list, personal_list
+
     except Exception as e:
         print(e)
         return pd.DataFrame()
@@ -117,6 +218,7 @@ def get_user_id_by_email(email):
     try:
         response = bot.users_lookupByEmail(email=email)
         return response['user']['id']
+
     except SlackApiError as e:
         print(f"Error finding user: {e.response['error']} {email}")
         return None
@@ -124,10 +226,11 @@ def get_user_id_by_email(email):
 
 def send_dm(user_id, message):
     try:
-        response = bot.chat_postMessage(
+        bot.chat_postMessage(
             channel=user_id,
             text=message
         )
+
     except SlackApiError as e:
         print(f"❌ Error sending message: {e.response['error']}")
 
@@ -136,78 +239,117 @@ if __name__ == '__main__':
 
     names = os.getenv("NAMES")
     names = json.loads(names)
+
     name_list, ticket_dict, printed_dict, personal_dict = fetch_tickets_from_notion()
+
     hexz_id = get_user_id_by_email(os.getenv("ADMIN_EMAIL"))
 
     for name in name_list:
-        tickets_exists: bool = False
-        personal_exists: bool = False
-        printing_exists: bool = False
+
+        tickets_exists = False
+        personal_exists = False
+        printing_exists = False
+
         if name not in ticket_dict:
             continue
 
-        tickets, issues = ticket_dict.get(name, ([], [])) if name != "Huzaifa Sabah Uddin" else ([], [])
+        tickets, issues = (
+            ticket_dict.get(name, ([], []))
+            if name != "Huzaifa Sabah Uddin"
+            else ([], [])
+        )
+
         tickets_3, personal = personal_dict.get(name, ([], []))
-        tickets_printing, printing = printed_dict.get(name, ([], [])) if name != "Huzaifa Sabah Uddin" else ([], [])
+
+        tickets_printing, printing = (
+            printed_dict.get(name, ([], []))
+            if name != "Huzaifa Sabah Uddin"
+            else ([], [])
+        )
+
         id_ = get_user_id_by_email(names.get(name))
 
         if tickets:
-            ticket_lines = "\n\n\n".join([f"*{t}*: {i}" for t, i in zip(tickets, issues)])
+            ticket_lines = "\n\n\n".join(
+                [f"*{t}*: {i}" for t, i in zip(tickets, issues)]
+            )
             tickets_exists = True
         else:
             ticket_lines = ""
 
         if tickets_3:
-            personal_lines = "\n\n\n".join([f"*{t}*: {i}" for t, i in zip(tickets_3, personal)])
+            personal_lines = "\n\n\n".join(
+                [f"*{t}*: {i}" for t, i in zip(tickets_3, personal)]
+            )
             personal_exists = True
         else:
             personal_lines = ""
 
         if tickets_printing:
-            printing_lines = "\n\n\n".join([f"*{t}*: {i}" for t, i in zip(tickets_printing, printing)])
+            printing_lines = "\n\n\n".join(
+                [f"*{t}*: {i}" for t, i in zip(tickets_printing, printing)]
+            )
             printing_exists = True
         else:
             printing_lines = ""
-
 
         if tickets_exists:
             message = (
                 f":bell: *Reminder for:* *<@{id_}>*\n\n"
                 f"Here are your open tickets:\n\n"
                 f"{ticket_lines}\n\n"
-                f":bangbang: Please provide an update/reminder to *<@{hexz_id}>* or update it on the app when possible. 📝"
+                f":bangbang: Please provide an update/reminder to "
+                f"*<@{hexz_id}>* or update it on the app when possible. 📝"
             )
+
             send_dm(id_, message)
 
         if tickets_exists:
-            send_dm(hexz_id, f"🚀 Notification sent to *<@{id_}>*!")
+            send_dm(
+                hexz_id,
+                f"🚀 Notification sent to *<@{id_}>*!"
+            )
 
         if personal_exists:
             message = (
                 f":bell: *Personal Reminder for:* *<@{id_}>*\n\n"
-                f"Here are your personal tickets reminders:\n\n"
+                f"Here are your personal ticket reminders:\n\n"
                 f"{personal_lines}\n\n"
             )
+
             send_dm(id_, message)
 
         if printing_exists:
             message = (
                 f":printer: *Printing Reminder for:* *<@{id_}>*\n\n"
-                f"Here are your pending printed copy/ies tickets:\n\n"
+                f"Here are your pending printed copy ticket(s):\n\n"
                 f"{printing_lines}\n\n"
-                f":bangbang: Please remind *<@{hexz_id}>* if urgent or leave a comment on the app.📝"
+                f":bangbang: Please remind *<@{hexz_id}>* if urgent "
+                f"or leave a comment on the app. 📝"
             )
+
             send_dm(id_, message)
 
-    tickets_2, printings = printed_dict.get("Huzaifa Sabah Uddin", ([], []))
+    tickets_2, printings = printed_dict.get(
+        "Huzaifa Sabah Uddin",
+        ([], [])
+    )
+
     if tickets_2:
-        printed_lines = "\n\n\n".join([f"*{t}*: {i}" for t, i in zip(tickets_2, printings)])
+
+        printed_lines = "\n\n\n".join(
+            [f"*{t}*: {i}" for t, i in zip(tickets_2, printings)]
+        )
+
         message = (
             f":printer: *Printing Reminder for:* *<@{hexz_id}>*\n\n"
             f"Pending Prints ({len(tickets_2)}):\n\n"
             f"{printed_lines}\n\n"
-
         )
+
         send_dm(hexz_id, message)
 
-    send_dm(hexz_id, ":bell: Reminder: Check your open tickets!")
+    send_dm(
+        hexz_id,
+        ":bell: Reminder: Check your open tickets!"
+    )
