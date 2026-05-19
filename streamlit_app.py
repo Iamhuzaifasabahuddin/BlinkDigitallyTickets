@@ -3,7 +3,8 @@ import hashlib
 import os
 import time
 from datetime import timedelta
-
+import plotly.express as px
+import plotly.graph_objects as go
 import extra_streamlit_components as stx
 import pandas as pd
 import pytz
@@ -466,11 +467,6 @@ def send_ticket_update_notifications(ticket_id, old_status, new_status, old_prio
 """
             send_dm(user_details['sender_id'], creator_message)
 
-            # if uploaded_files:
-            #     for f in uploaded_files:
-            #         f.seek(0)
-            #     send_files_to_slack(user_details['sender_id'], uploaded_files, ticket_id, issue)
-
             print(f"✅ Update notification sent to {creator_name} ({user_details['sender_email']})")
 
     except Exception as e:
@@ -586,7 +582,219 @@ def main():
             st.session_state.df = fetch_tickets_from_notion()
             st.session_state.original_df = st.session_state.df.copy()
 
-    col1, col2 = st.tabs(["Add Ticket", "Update Ticket"])
+    def showcase(key):
+        if "df" not in st.session_state:
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
+
+        df = st.session_state.df.copy()
+        df["Month"] = df["Date Submitted"].dt.strftime("%B")
+        unique_months = sorted(df["Month"].unique().tolist())
+        months = ["All"] + unique_months
+
+        pkt = pytz.timezone("Asia/Karachi")
+        current_month = datetime.datetime.now(pkt).strftime("%B")
+        default_index = months.index("All") if current_month in months else 0
+
+        selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index, key=key)
+
+        if selected_month == "All":
+            filtered_df = df.copy()
+        else:
+            filtered_df = df[df["Month"] == selected_month].copy()
+
+        st.subheader(f"📊 Showing tickets for: **{selected_month}**")
+
+        normal_count = len(filtered_df[filtered_df["Ticket Type"] == "Normal"])
+        personal_count = len(filtered_df[filtered_df["Ticket Type"] == "Personal"])
+
+        st.metric(label="Total Normal Tickets Found", value=normal_count)
+        st.metric(label="Total Personal Tickets Found", value=personal_count)
+
+        if filtered_df.empty:
+            st.info("No tickets found for the selected month.")
+            st.stop()
+
+        active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
+        personal_active = active_df[active_df["Ticket Type"] == "Personal"]
+        active_df = active_df[active_df["Ticket Type"] == "Normal"]
+
+        closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
+        personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
+        closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
+
+        st.header("🟢 Active Tickets")
+
+        if selected_month == "All":
+            st.metric(
+                label="Number of active tickets",
+                value=f"{len(active_df):,}"
+            )
+        else:
+            st.metric(
+                label=f"Number of active tickets this month ({selected_month})",
+                value=f"{len(active_df):,}"
+            )
+
+        st.metric(label="Number of active personal tickets", value=len(personal_active))
+
+        if st.session_state.get("admin_authenticated", False):
+            st.info(
+                "You can edit tickets by double-clicking a cell. Click 'Save Changes to Notion' "
+                "to sync your edits. You can also sort columns by clicking headers.",
+                icon="✍️",
+            )
+
+        display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
+
+        disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By",
+                            "Assigned To",
+                            "Ticket Type"]
+        if not st.session_state.get("admin_authenticated", False):
+            disabled_columns = list(display_active_df.columns)
+
+        edited_active_df = st.data_editor(
+            display_active_df,
+            width="stretch",
+            hide_index=True,
+            key=f"active_editor_{key}",
+            column_config={
+                "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                           required=True),
+                "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
+                                                             required=True),
+                "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+                "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
+            },
+            disabled=disabled_columns,
+        )
+
+        if st.session_state.get("admin_authenticated", False) and not edited_active_df.equals(display_active_df):
+            if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
+                with st.spinner("Saving changes to Notion..."):
+                    success_count, error_count = 0, 0
+
+                    for idx in edited_active_df.index:
+                        original_row = display_active_df.loc[idx]
+                        edited_row = edited_active_df.loc[idx]
+
+                        if not original_row.equals(edited_row):
+                            page_id = active_df.loc[idx, "page_id"]
+                            success = update_ticket_in_notion(
+                                page_id=page_id,
+                                issue=edited_row["Issue"],
+                                status=edited_row["Status"],
+                                priority=edited_row["Priority"],
+                                resolved_date=edited_row["Resolved Date"],
+                                comments=edited_row["Comments"],
+                                old_status=original_row["Status"],
+                                old_priority=original_row["Priority"],
+                                ticket_id=original_row["ID"],
+                                creator_name=original_row.get("Created By", "Unknown"),
+                                assigned_name=original_row.get("Assigned To", "Unknown"),
+                            )
+
+                            if success:
+                                success_count += 1
+                            else:
+                                error_count += 1
+
+                    if success_count > 0:
+                        st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
+                    if error_count > 0:
+                        st.error(f"❌ {error_count} ticket(s) failed to update.")
+
+                    st.session_state.df = fetch_tickets_from_notion()
+                    st.session_state.original_df = st.session_state.df.copy()
+                    st.rerun()
+
+        st.divider()
+
+        st.header("📦 Closed Tickets")
+
+        if selected_month == "All":
+            st.metric(
+                label="Number of closed tickets",
+                value=f"{len(closed_df):,}"
+            )
+        else:
+            st.metric(
+                label=f"Number of closed tickets this month ({selected_month})",
+                value=f"{len(closed_df):,}"
+            )
+
+        st.metric(label="Number of closed personal tickets", value=len(personal_closed))
+
+        if closed_df.empty:
+            st.info("No closed tickets for the selected month.")
+        else:
+            with st.expander("View Closed Tickets", expanded=False):
+                display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
+
+                disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time",
+                                           "Created By",
+                                           "Assigned To", "Ticket Type"]
+                if not st.session_state.get("admin_authenticated", False):
+                    disabled_closed_columns = list(display_closed_df.columns)
+
+                edited_closed_df = st.data_editor(
+                    display_closed_df,
+                    width="stretch",
+                    hide_index=True,
+                    key=f"closed_editor_{key}",
+                    column_config={
+                        "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
+                                                                   required=True),
+                        "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
+                                                                     required=True),
+                        "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
+                        "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
+                    },
+                    disabled=disabled_closed_columns,
+                )
+
+                if st.session_state.get("admin_authenticated", False) and not edited_closed_df.equals(
+                        display_closed_df):
+                    if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
+                        with st.spinner("Saving changes to Notion..."):
+                            success_count, error_count = 0, 0
+
+                            for idx in edited_closed_df.index:
+                                original_row = display_closed_df.loc[idx]
+                                edited_row = edited_closed_df.loc[idx]
+
+                                if not original_row.equals(edited_row):
+                                    page_id = closed_df.loc[idx, "page_id"]
+                                    success = update_ticket_in_notion(
+                                        page_id=page_id,
+                                        issue=edited_row["Issue"],
+                                        status=edited_row["Status"],
+                                        priority=edited_row["Priority"],
+                                        resolved_date=edited_row["Resolved Date"],
+                                        comments=edited_row["Comments"],
+                                        old_status=original_row["Status"],
+                                        old_priority=original_row["Priority"],
+                                        ticket_id=original_row["ID"],
+                                        creator_name=original_row.get("Created By", "Unknown"),
+                                        assigned_name=original_row.get("Assigned To", "Unknown"),
+                                    )
+
+                                    if success:
+                                        success_count += 1
+                                    else:
+                                        error_count += 1
+
+                            if success_count > 0:
+                                st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
+                            if error_count > 0:
+                                st.error(f"❌ {error_count} ticket(s) failed to update.")
+
+                            st.session_state.df = fetch_tickets_from_notion()
+                            st.session_state.original_df = st.session_state.df.copy()
+                            st.rerun()
+
+    # ── Tabs: Add Ticket / Update Ticket / Analytics ──────────────────────────
+    col1, col2, col3 = st.tabs(["Add Ticket", "Update Ticket", "📊 Analytics"])
 
     with col1:
         expander = st.expander("Order Details Template 📄")
@@ -704,7 +912,7 @@ def main():
 
                     except Exception as e:
                         st.error(f"🚨 Error while creating ticket in Notion: {e}")
-
+        showcase(key="add_ticket")
     with col2:
         st.header("✏️ Update an Existing Ticket")
 
@@ -734,6 +942,9 @@ def main():
                 st.markdown(f"<p style='font-size: 16px;'>📕 Assigned To: {ticket_data['Assigned To']}</p>",
                             unsafe_allow_html=True)
 
+                pkt = pytz.timezone("Asia/Karachi")
+                now_pkt = datetime.datetime.now(pkt)
+
                 new_notify = ticket_data["Notify"]
                 if st.session_state.get("admin_authenticated", False):
                     new_notify = st.selectbox("Update Notify", ["Yes", "No"],
@@ -751,7 +962,6 @@ def main():
 
                     comments = st.text_area("Comments")
 
-                    # ── NEW: File upload for updates ──────────────────────────
                     update_uploaded_files = st.file_uploader(
                         "Attach files (optional)",
                         accept_multiple_files=True,
@@ -768,7 +978,6 @@ def main():
                         )
                         if total_update_size > max_size:
                             st.warning("⚠️ Total file size exceeds 50 MB limit. Please reduce file size.")
-                    # ─────────────────────────────────────────────────────────
 
                     update_submitted = st.form_submit_button("Update Ticket")
 
@@ -776,14 +985,14 @@ def main():
                             new_status != ticket_data["Status"] or
                             new_priority != ticket_data["Priority"] or
                             comments.strip() != "" or
-                            bool(update_uploaded_files)   # treat new files as a change
+                            bool(update_uploaded_files)
+                            or new_notify != ticket_data["Notify"]
                     )
 
                     if update_submitted and not has_changes:
                         st.warning("⚠️ No changes detected for this ticket.")
 
                     if update_submitted and has_changes:
-                        # Validate file size before proceeding
                         if update_uploaded_files and sum(f.size for f in update_uploaded_files) > 50 * 1024 * 1024:
                             st.error("⚠️ Total file size exceeds 50 MB. Please reduce file size before submitting.")
                         else:
@@ -821,213 +1030,482 @@ def main():
 
                                 except Exception as e:
                                     st.error(f"🚨 Error updating ticket: {e}")
+        showcase(key="update_ticket")
+    # ── Analytics tab ─────────────────────────────────────────────────────────
+    with col3:
+        if "df" not in st.session_state:
+            st.session_state.df = fetch_tickets_from_notion()
+            st.session_state.original_df = st.session_state.df.copy()
+
+        display_analytics_dashboard(st.session_state.df)
 
     st.divider()
 
-    if "df" not in st.session_state:
-        st.session_state.df = fetch_tickets_from_notion()
-        st.session_state.original_df = st.session_state.df.copy()
 
-    df = st.session_state.df.copy()
-    df["Month"] = df["Date Submitted"].dt.strftime("%B")
-    unique_months = sorted(df["Month"].unique().tolist())
-    months = ["All"] + unique_months
+def calculate_analytics_metrics(df):
+    """Calculate key analytics metrics."""
+    if df.empty:
+        return {}
 
-    current_month = datetime.datetime.now(pkt).strftime("%B")
-    default_index = months.index("All") if current_month in months else 0
+    pkt = pytz.timezone("Asia/Karachi")
 
-    selected_month = st.selectbox("📅 Choose a month to filter tickets", months, index=default_index)
+    metrics = {
+        "total_tickets": len(df),
+        "open_tickets": len(df[df["Status"] == "Open"]),
+        "in_progress_tickets": len(df[df["Status"] == "In Progress"]),
+        "closed_tickets": len(df[df["Status"] == "Closed"]),
+        "high_priority": len(df[df["Priority"] == "High"]),
+        "medium_priority": len(df[df["Priority"] == "Medium"]),
+        "low_priority": len(df[df["Priority"] == "Low"]),
+    }
 
-    if selected_month == "All":
-        filtered_df = df.copy()
+    # Calculate average resolution time
+    closed_tickets = df[df["Status"] == "Closed"].copy()
+    if not closed_tickets.empty:
+        closed_tickets["resolution_days"] = (
+                pd.to_datetime(closed_tickets["Resolved Date"]) -
+                pd.to_datetime(closed_tickets["Date Submitted"])
+        ).dt.days
+        metrics["avg_resolution_time"] = closed_tickets["resolution_days"].mean()
+        metrics["max_resolution_time"] = closed_tickets["resolution_days"].max()
+        metrics["min_resolution_time"] = closed_tickets["resolution_days"].min()
     else:
-        filtered_df = df[df["Month"] == selected_month].copy()
+        metrics["avg_resolution_time"] = 0
+        metrics["max_resolution_time"] = 0
+        metrics["min_resolution_time"] = 0
 
-    st.subheader(f"📊 Showing tickets for: **{selected_month}**")
+    # Calculate overdue tickets
+    open_tickets = df[df["Status"].isin(["Open", "In Progress"])].copy()
+    if not open_tickets.empty:
+        today = datetime.datetime.now(pkt).date()  # FIX: was datetime.now(pkt).date()
+        open_tickets["Date Submitted"] = pd.to_datetime(open_tickets["Date Submitted"])
+        open_tickets["days_open"] = (today - open_tickets["Date Submitted"].dt.date).apply(lambda x: x.days)
 
-    normal_count = len(filtered_df[filtered_df["Ticket Type"] == "Normal"])
-    personal_count = len(filtered_df[filtered_df["Ticket Type"] == "Personal"])
-
-    st.metric(label="Total Normal Tickets Found", value=normal_count)
-    st.metric(label="Total Personal Tickets Found", value=personal_count)
-
-    if filtered_df.empty:
-        st.info("No tickets found for the selected month.")
-        st.stop()
-
-    active_df = filtered_df[filtered_df["Status"].isin(["Open", "In Progress"])].copy()
-    personal_active = active_df[active_df["Ticket Type"] == "Personal"]
-    active_df = active_df[active_df["Ticket Type"] == "Normal"]
-
-    closed_df = filtered_df[filtered_df["Status"] == "Closed"].copy()
-    personal_closed = closed_df[closed_df["Ticket Type"] == "Personal"]
-    closed_df = closed_df[closed_df["Ticket Type"] == "Normal"]
-
-    st.header("🟢 Active Tickets")
-
-    if selected_month == "All":
-        st.metric(
-            label="Number of active tickets",
-            value=f"{len(active_df):,}"
-        )
+        # Tickets open for more than 7 days
+        metrics["overdue_tickets"] = len(open_tickets[open_tickets["days_open"] > 7])
+        metrics["oldest_ticket_days"] = open_tickets["days_open"].max()
     else:
+        metrics["overdue_tickets"] = 0
+        metrics["oldest_ticket_days"] = 0
+
+    return metrics
+
+
+def display_analytics_dashboard(df):
+    """Display comprehensive analytics dashboard."""
+
+    if df.empty:
+        st.warning("⚠️ No data available for analytics")
+        return
+
+    st.header("📊 Ticket Analytics Dashboard")
+
+    metrics = calculate_analytics_metrics(df)
+
+    # Display KPI Cards
+    st.subheader("📈 Key Performance Indicators")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
         st.metric(
-            label=f"Number of active tickets this month ({selected_month})",
-            value=f"{len(active_df):,}"
+            label="Total Tickets",
+            value=metrics["total_tickets"],
+            delta="All Time"
         )
 
-    st.metric(label="Number of active personal tickets", value=len(personal_active))
-
-    if st.session_state.get("admin_authenticated", False):
-        st.info(
-            "You can edit tickets by double-clicking a cell. Click 'Save Changes to Notion' "
-            "to sync your edits. You can also sort columns by clicking headers.",
-            icon="✍️",
+    with col2:
+        st.metric(
+            label="Active Tickets",
+            value=metrics["open_tickets"] + metrics["in_progress_tickets"],
+            delta_color="inverse"
         )
 
-    display_active_df = active_df.drop(columns=["page_id", "Month", "Resolved Time"], errors="ignore")
+    with col3:
+        st.metric(
+            label="Closed Tickets",
+            value=metrics["closed_tickets"],
+            delta="Completed"
+        )
 
-    disabled_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By", "Assigned To",
-                        "Ticket Type"]
-    if not st.session_state.get("admin_authenticated", False):
-        disabled_columns = list(display_active_df.columns)
+    with col4:
+        st.metric(
+            label="Avg Resolution",
+            value=f"{metrics['avg_resolution_time']:.1f} days",
+            delta="Average"
+        )
 
-    edited_active_df = st.data_editor(
-        display_active_df,
-        width="stretch",
-        hide_index=True,
-        key="active_editor",
-        column_config={
-            "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
-                                                       required=True),
-            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
-            "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
-            "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
-        },
-        disabled=disabled_columns,
+    st.divider()
+
+    # Ticket Status Overview
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("🎯 Ticket Status Distribution")
+        status_data = pd.DataFrame({
+            "Status": ["Open", "In Progress", "Closed"],
+            "Count": [
+                metrics["open_tickets"],
+                metrics["in_progress_tickets"],
+                metrics["closed_tickets"]
+            ],
+            "Color": ["#FF6B6B", "#FFA94D", "#51CF66"]
+        })
+
+        fig_status = px.pie(
+            status_data,
+            values="Count",
+            names="Status",
+            title="Tickets by Status",
+            color_discrete_map=dict(zip(status_data["Status"], status_data["Color"]))
+        )
+        fig_status.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_status, width="stretch")
+
+    with col2:
+        st.subheader("🔥 Priority Distribution")
+        priority_data = pd.DataFrame({
+            "Priority": ["High", "Medium", "Low"],
+            "Count": [
+                metrics["high_priority"],
+                metrics["medium_priority"],
+                metrics["low_priority"]
+            ],
+            "Color": ["#FF6B6B", "#FFA94D", "#74C0FC"]
+        })
+
+        fig_priority = px.pie(
+            priority_data,
+            values="Count",
+            names="Priority",
+            title="Tickets by Priority",
+            color_discrete_map=dict(zip(priority_data["Priority"], priority_data["Color"]))
+        )
+        fig_priority.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_priority, width="stretch")
+
+    st.divider()
+
+    # Tickets Over Time
+    st.subheader("📅 Tickets Created Over Time")
+
+    df_copy = df.copy()
+    df_copy["Date Submitted"] = pd.to_datetime(df_copy["Date Submitted"])
+    df_copy["Date"] = df_copy["Date Submitted"].dt.date
+
+    tickets_by_date = df_copy.groupby("Date").size().reset_index(name="Count")
+    tickets_by_date["Cumulative"] = tickets_by_date["Count"].cumsum()
+
+    fig_timeline = go.Figure()
+
+    fig_timeline.add_trace(go.Bar(
+        x=tickets_by_date["Date"],
+        y=tickets_by_date["Count"],
+        name="Daily Tickets",
+        marker_color="#4C72B0",
+        yaxis="y1"
+    ))
+
+    fig_timeline.add_trace(go.Scatter(
+        x=tickets_by_date["Date"],
+        y=tickets_by_date["Cumulative"],
+        name="Cumulative Tickets",
+        marker_color="#DD8452",
+        yaxis="y2",
+        mode="lines+markers"
+    ))
+
+    fig_timeline.update_layout(
+        xaxis_title="Date",
+        yaxis=dict(title="Daily Tickets"),
+        yaxis2=dict(title="Cumulative Tickets", overlaying="y", side="right"),
+        hovermode="x unified"
     )
 
-    if st.session_state.get("admin_authenticated", False) and not edited_active_df.equals(display_active_df):
-        if st.button("💾 Save Active Tickets to Notion", type="primary", key="save_active"):
-            with st.spinner("Saving changes to Notion..."):
-                success_count, error_count = 0, 0
-
-                for idx in edited_active_df.index:
-                    original_row = display_active_df.loc[idx]
-                    edited_row = edited_active_df.loc[idx]
-
-                    if not original_row.equals(edited_row):
-                        page_id = active_df.loc[idx, "page_id"]
-                        success = update_ticket_in_notion(
-                            page_id=page_id,
-                            issue=edited_row["Issue"],
-                            status=edited_row["Status"],
-                            priority=edited_row["Priority"],
-                            resolved_date=edited_row["Resolved Date"],
-                            comments=edited_row["Comments"],
-                            old_status=original_row["Status"],
-                            old_priority=original_row["Priority"],
-                            ticket_id=original_row["ID"],
-                            creator_name=original_row.get("Created By", "Unknown"),
-                            assigned_name=original_row.get("Assigned To", "Unknown"),
-                        )
-
-                        if success:
-                            success_count += 1
-                        else:
-                            error_count += 1
-
-                if success_count > 0:
-                    st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
-                if error_count > 0:
-                    st.error(f"❌ {error_count} ticket(s) failed to update.")
-
-                st.session_state.df = fetch_tickets_from_notion()
-                st.session_state.original_df = st.session_state.df.copy()
-                st.rerun()
+    st.plotly_chart(fig_timeline, width="stretch")
 
     st.divider()
 
-    st.header("📦 Closed Tickets")
+    # Performance Metrics
+    col1, col2, col3 = st.columns(3)
 
-    if selected_month == "All":
+    with col1:
         st.metric(
-            label="Number of closed tickets",
-            value=f"{len(closed_df):,}"
-        )
-    else:
-        st.metric(
-            label=f"Number of closed tickets this month ({selected_month})",
-            value=f"{len(closed_df):,}"
+            label="⏱️ Max Resolution Time",
+            value=f"{metrics['max_resolution_time']:.0f} days",
+            delta="Highest"
         )
 
-    st.metric(label="Number of closed personal tickets", value=len(personal_closed))
+    with col2:
+        st.metric(
+            label="⚡ Min Resolution Time",
+            value=f"{metrics['min_resolution_time']:.0f} days",
+            delta="Lowest"
+        )
 
-    if closed_df.empty:
-        st.info("No closed tickets for the selected month.")
-    else:
-        with st.expander("View Closed Tickets", expanded=False):
-            display_closed_df = closed_df.drop(columns=["page_id", "Month"], errors="ignore")
+    with col3:
+        st.metric(
+            label="⚠️ Overdue Tickets",
+            value=metrics["overdue_tickets"],
+            delta_color="inverse"
+        )
 
-            disabled_closed_columns = ["ID", "Date Submitted", "Month", "Resolved Time", "Submitted Time", "Created By",
-                                       "Assigned To", "Ticket Type"]
-            if not st.session_state.get("admin_authenticated", False):
-                disabled_closed_columns = list(display_closed_df.columns)
+    st.divider()
 
-            edited_closed_df = st.data_editor(
-                display_closed_df,
-                width="stretch",
-                hide_index=True,
-                key="closed_editor",
-                column_config={
-                    "Status": st.column_config.SelectboxColumn("Status", options=["Open", "In Progress", "Closed"],
-                                                               required=True),
-                    "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"],
-                                                                 required=True),
-                    "Date Submitted": st.column_config.DateColumn("Date Submitted", format="YYYY-MM-DD"),
-                    "Resolved Date": st.column_config.DateColumn("Resolved Date", format="YYYY-MM-DD"),
-                },
-                disabled=disabled_closed_columns,
-            )
+    # Tickets by Priority & Status
+    st.subheader("🔍 Tickets by Priority and Status")
 
-            if st.session_state.get("admin_authenticated", False) and not edited_closed_df.equals(display_closed_df):
-                if st.button("💾 Save Closed Tickets to Notion", type="primary", key="save_closed"):
-                    with st.spinner("Saving changes to Notion..."):
-                        success_count, error_count = 0, 0
+    priority_status = pd.crosstab(
+        df["Priority"],
+        df["Status"],
+        margins=True
+    )
 
-                        for idx in edited_closed_df.index:
-                            original_row = display_closed_df.loc[idx]
-                            edited_row = edited_closed_df.loc[idx]
+    fig_matrix = go.Figure(data=go.Heatmap(
+        z=priority_status.iloc[:-1, :-1].values,
+        x=priority_status.columns[:-1],
+        y=priority_status.index[:-1],
+        colorscale="RdYlGn_r",
+        text=priority_status.iloc[:-1, :-1].values,
+        texttemplate="%{text}",
+        textfont={"size": 12}
+    ))
 
-                            if not original_row.equals(edited_row):
-                                page_id = closed_df.loc[idx, "page_id"]
-                                success = update_ticket_in_notion(
-                                    page_id=page_id,
-                                    issue=edited_row["Issue"],
-                                    status=edited_row["Status"],
-                                    priority=edited_row["Priority"],
-                                    resolved_date=edited_row["Resolved Date"],
-                                    comments=edited_row["Comments"],
-                                    old_status=original_row["Status"],
-                                    old_priority=original_row["Priority"],
-                                    ticket_id=original_row["ID"],
-                                    creator_name=original_row.get("Created By", "Unknown"),
-                                    assigned_name=original_row.get("Assigned To", "Unknown"),
-                                )
+    fig_matrix.update_layout(
+        title="Priority × Status Matrix",
+        xaxis_title="Status",
+        yaxis_title="Priority"
+    )
 
-                                if success:
-                                    success_count += 1
-                                else:
-                                    error_count += 1
+    st.plotly_chart(fig_matrix, width="stretch")
 
-                        if success_count > 0:
-                            st.success(f"✅ {success_count} ticket(s) updated successfully! Notifications sent.")
-                        if error_count > 0:
-                            st.error(f"❌ {error_count} ticket(s) failed to update.")
+    st.divider()
 
-                        st.session_state.df = fetch_tickets_from_notion()
-                        st.session_state.original_df = st.session_state.df.copy()
-                        st.rerun()
+    # Team Performance
+    st.subheader("👥 Team Performance")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Tickets Created By:**")
+        created_by = df["Created By"].value_counts().head(10)
+        fig_created = px.bar(
+            x=created_by.values,
+            y=created_by.index,
+            orientation="h",
+            title="Top 10 Ticket Creators",
+            labels={"x": "Count", "y": "User"}
+        )
+        fig_created.update_layout(height=400)
+        st.plotly_chart(fig_created, width="stretch")
+
+    with col2:
+        st.write("**Tickets Assigned To:**")
+        assigned_to = df["Assigned To"].value_counts().head(10)
+        fig_assigned = px.bar(
+            x=assigned_to.values,
+            y=assigned_to.index,
+            orientation="h",
+            title="Top 10 Assignees",
+            labels={"x": "Count", "y": "User"},
+            color_discrete_sequence=["#FF6B6B"]
+        )
+        fig_assigned.update_layout(height=400)
+        st.plotly_chart(fig_assigned, width="stretch")
+
+    st.divider()
+
+    # Personal vs Normal Tickets
+    st.subheader("📋 Ticket Type Breakdown")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        ticket_type_count = df["Ticket Type"].value_counts()
+        fig_type = px.pie(
+            values=ticket_type_count.values,
+            names=ticket_type_count.index,
+            title="Personal vs Normal Tickets",
+            color_discrete_map={"Personal": "#9D4EDD", "Normal": "#3A86FF"}
+        )
+        fig_type.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_type, width="stretch")
+
+    with col2:
+        # Resolution Rate
+        total = len(df)
+        closed = len(df[df["Status"] == "Closed"])
+        resolution_rate = (closed / total * 100) if total > 0 else 0
+
+        fig_resolution = go.Figure(go.Indicator(
+            mode="gauge+number+delta",
+            value=resolution_rate,
+            title={'text': "Resolution Rate (%)"},
+            delta={'reference': 100},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 50], 'color': "lightgray"},
+                    {'range': [50, 100], 'color': "gray"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 100
+                }
+            }
+        ))
+        st.plotly_chart(fig_resolution, width="stretch")
+
+    st.divider()
+
+    # Detailed Analytics Table
+    st.subheader("📊 Detailed Analytics")
+
+    analytics_data = {
+        "Metric": [
+            "Total Tickets",
+            "Open",
+            "In Progress",
+            "Closed",
+            "High Priority",
+            "Medium Priority",
+            "Low Priority",
+            "Personal Tickets",
+            "Normal Tickets",
+            "Avg Resolution Time (days)",
+            "Overdue Tickets (>7 days)",
+            "Oldest Ticket (days)",
+            "Resolution Rate (%)"
+        ],
+        "Value": [
+            metrics["total_tickets"],
+            metrics["open_tickets"],
+            metrics["in_progress_tickets"],
+            metrics["closed_tickets"],
+            metrics["high_priority"],
+            metrics["medium_priority"],
+            metrics["low_priority"],
+            len(df[df["Ticket Type"] == "Personal"]),
+            len(df[df["Ticket Type"] == "Normal"]),
+            f"{metrics['avg_resolution_time']:.2f}",
+            metrics["overdue_tickets"],
+            metrics["oldest_ticket_days"],
+            f"{(len(df[df['Status'] == 'Closed']) / len(df) * 100):.2f}" if len(df) > 0 else "0"
+        ]
+    }
+
+    analytics_df = pd.DataFrame(analytics_data)
+    st.dataframe(analytics_df, width="stretch", hide_index=True)
+
+    # Export Analytics
+    st.divider()
+    st.subheader("📥 Export Analytics")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        csv = analytics_df.to_csv(index=False)
+        st.download_button(
+            label="📊 Download Analytics CSV",
+            data=csv,
+            file_name=f"ticket_analytics_{datetime.datetime.now().strftime('%Y-%m-%d')}.csv",  # FIX
+            mime="text/csv"
+        )
+
+    with col2:
+        # Create summary report
+        summary_report = f"""
+TICKET ANALYTICS REPORT
+Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+SUMMARY
+-------
+Total Tickets: {metrics['total_tickets']}
+Active Tickets: {metrics['open_tickets'] + metrics['in_progress_tickets']}
+Closed Tickets: {metrics['closed_tickets']}
+
+STATUS BREAKDOWN
+----------------
+Open: {metrics['open_tickets']} ({metrics['open_tickets'] / metrics['total_tickets'] * 100:.1f}%)
+In Progress: {metrics['in_progress_tickets']} ({metrics['in_progress_tickets'] / metrics['total_tickets'] * 100:.1f}%)
+Closed: {metrics['closed_tickets']} ({metrics['closed_tickets'] / metrics['total_tickets'] * 100:.1f}%)
+
+PRIORITY BREAKDOWN
+------------------
+High Priority: {metrics['high_priority']} ({metrics['high_priority'] / metrics['total_tickets'] * 100:.1f}%)
+Medium Priority: {metrics['medium_priority']} ({metrics['medium_priority'] / metrics['total_tickets'] * 100:.1f}%)
+Low Priority: {metrics['low_priority']} ({metrics['low_priority'] / metrics['total_tickets'] * 100:.1f}%)
+
+PERFORMANCE METRICS
+-------------------
+Average Resolution Time: {metrics['avg_resolution_time']:.2f} days
+Max Resolution Time: {metrics['max_resolution_time']:.0f} days
+Min Resolution Time: {metrics['min_resolution_time']:.0f} days
+Overdue Tickets (>7 days): {metrics['overdue_tickets']}
+Oldest Ticket: {metrics['oldest_ticket_days']} days
+Resolution Rate: {(metrics['closed_tickets'] / metrics['total_tickets'] * 100):.2f}%
+        """
+
+        st.download_button(
+            label="📄 Download Full Report",
+            data=summary_report,
+            file_name=f"ticket_report_{datetime.datetime.now().strftime('%Y-%m-%d')}.txt",  # FIX
+            mime="text/plain"
+        )
+
+
+def display_user_analytics(df, username):
+    """Display analytics for a specific user."""
+
+    user_df = df[
+        (df["Created By"] == username) | (df["Assigned To"] == username)
+        ].copy()
+
+    if user_df.empty:
+        st.warning(f"No data available for {username}")
+        return
+
+    st.subheader(f"👤 {username} - Personal Analytics")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        created = len(df[df["Created By"] == username])
+        st.metric("Tickets Created", created)
+
+    with col2:
+        assigned = len(df[df["Assigned To"] == username])
+        st.metric("Tickets Assigned", assigned)
+
+    with col3:
+        closed = len(user_df[user_df["Status"] == "Closed"])
+        st.metric("Tickets Closed", closed)
+
+    with col4:
+        resolution_rate = (closed / len(user_df) * 100) if len(user_df) > 0 else 0
+        st.metric("Resolution Rate", f"{resolution_rate:.1f}%")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        status_counts = user_df["Status"].value_counts()
+        fig = px.pie(
+            values=status_counts.values,
+            names=status_counts.index,
+            title=f"{username}'s Tickets by Status"
+        )
+        st.plotly_chart(fig, width="stretch")
+
+    with col2:
+        priority_counts = user_df["Priority"].value_counts()
+        fig = px.pie(
+            values=priority_counts.values,
+            names=priority_counts.index,
+            title=f"{username}'s Tickets by Priority"
+        )
+        st.plotly_chart(fig, width="stretch")
 
 
 if __name__ == "__main__":

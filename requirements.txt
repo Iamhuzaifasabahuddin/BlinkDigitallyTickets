@@ -4,3 +4,4 @@ streamlit == 1.53.0
 altair == 6.0.0
 slack_sdk >= 3.39
 pip >= 25.3
+plotly == 6.6.0
