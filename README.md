@@ -9,7 +9,7 @@ BlinkDigitally Ticket Management & Reminder System is a Streamlit-based internal
 **Repository & reference**
 
 * Repo: [https://github.com/Iamhuzaifasabahuddin/BlinkDigitallyTickets](https://github.com/Iamhuzaifasabahuddin/BlinkDigitallyTickets)
-* Primary app file: `app.py`
+* Primary app file: `streamlit_app.py`
 
 ---
 
@@ -145,7 +145,7 @@ pip install -r requirements.txt
 5. Run the Streamlit app
 
 ```bash
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
 
 Open the URL shown in the terminal (typically [http://localhost:8501](http://localhost:8501)).
