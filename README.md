@@ -1,6 +1,6 @@
 # 🎟 BlinkDigitally — Ticket Management & Reminder System
 
-**Version:** v1.0.0
+**Version:** v1.1.0
 
 ## Short description
 
@@ -23,6 +23,7 @@ BlinkDigitally Ticket Management & Reminder System is a Streamlit-based internal
 * Install & Run (Local)
 * GitHub Actions — Daily Reminders
 * Slack Integration Details
+* Analytics
 * Development & Testing
 * Roadmap
 * Contributing
